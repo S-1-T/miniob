@@ -1,6 +1,13 @@
 build
 .vscode
 
+# db files
+miniob
+
+# logs
+*.log.*
+*.log
+
 # C++ ignores
 # Prerequisites
 *.d
