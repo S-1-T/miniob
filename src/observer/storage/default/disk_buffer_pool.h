@@ -21,6 +21,8 @@ See the Mulan PSL v2 for more details. */
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unordered_map>
+#include <list>
 
 #include <vector>
 
@@ -60,7 +62,7 @@ typedef struct {
   Frame *frame;
 } BPPageHandle;
 
-class BPFileHandle{
+class BPFileHandle {
 public:
   BPFileHandle() {
     memset(this, 0, sizeof(*this));
@@ -74,7 +76,39 @@ public:
   Page *hdr_page;
   char *bitmap;
   BPFileSubHeader *file_sub_header;
-} ;
+};
+
+class LRUList {
+public:
+  LRUList() {}
+
+  LRUList(int size) {
+    for (int i = size - 1; i >= 0; i--) {
+      list.push_front(i);
+      iter_map[i] = list.begin();
+    }
+  }
+
+  // 刷新 id 的最近使用
+  void touch(int id) {
+    if (id >= list.size()) {
+      return;
+    }
+    auto iter = iter_map[id];
+    list.erase(iter);
+    list.push_front(id);
+    iter_map[id] = list.begin();
+  }
+
+  // 拿到 LRU 的 id
+  int get_lru_id() {
+    return list.back();
+  }
+
+private:
+  std::list<int> list;
+  std::unordered_map<int, std::list<int>::iterator> iter_map;
+};
 
 class BPManager {
 public:
@@ -86,6 +120,7 @@ public:
       allocated[i] = false;
       frame[i].pin_count = 0;
     }
+    lru_list = LRUList(size);
   }
 
   ~BPManager() {
@@ -97,10 +132,31 @@ public:
   }
 
   Frame *alloc() {
-    return nullptr; // TODO for test
+    for (int i = 0; i < size; i++) {
+      if (!allocated[i]) {
+        allocated[i] = true;
+        lru_list.touch(i);
+        return &frame[i];
+      }
+    }
+    auto lru_id = lru_list.get_lru_id();
+    lru_list.touch(lru_id);
+    return &frame[lru_id]; // TODO for test
   }
 
   Frame *get(int file_desc, PageNum page_num) {
+    for (int i = 0; i < size; i++) {
+      if (!allocated[i]) {
+        continue;
+      }
+      if (frame[i].file_desc != file_desc) {
+        continue;
+      }
+      if (frame[i].page.page_num == page_num) {
+        lru_list.touch(i);
+        return &frame[i];
+      }
+    }
     return nullptr; // TODO for test
   }
 
@@ -110,8 +166,9 @@ public:
 
 public:
   int size;
-  Frame * frame = nullptr;
+  Frame *frame = nullptr;
   bool *allocated = nullptr;
+  LRUList lru_list;
 };
 
 class DiskBufferPool {
@@ -190,6 +247,7 @@ public:
 
 protected:
   RC allocate_block(Frame **buf);
+
   RC dispose_block(Frame *buf);
 
   /**
@@ -198,10 +256,15 @@ protected:
    * @param page_num 如果不指定page_num 将刷新所有页
    */
   RC force_page(BPFileHandle *file_handle, PageNum page_num);
+
   RC force_all_pages(BPFileHandle *file_handle);
+
   RC check_file_id(int file_id);
+
   RC check_page_num(PageNum page_num, BPFileHandle *file_handle);
+
   RC load_page(PageNum page_num, BPFileHandle *file_handle, Frame *frame);
+
   RC flush_block(Frame *frame);
 
 private:
