@@ -232,7 +232,17 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
       snprintf(response, sizeof(response), "%s", ss.str().c_str());
     }
     break;
-
+  case SCF_DROP_INDEX: {
+    const DropIndex &dropIndex = sql->sstr.drop_index;
+    rc = handler_->drop_index(current_trx, current_db,"test" , dropIndex.index_name);
+    snprintf(response, sizeof(response), "%s\n", rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
+    }
+    break;
+  case SCF_DROP_TABLE: {
+    const DropTable  &dropTable = sql->sstr.drop_table;
+    rc = handler_->drop_table()
+    }
+    break;
   case SCF_LOAD_DATA: {
       /*
         从文件导入数据，如果做性能测试，需要保持这些代码可以正常工作

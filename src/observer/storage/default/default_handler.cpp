@@ -128,6 +128,7 @@ RC DefaultHandler::create_table(const char *dbname, const char *relation_name, i
 }
 
 RC DefaultHandler::drop_table(const char *dbname, const char *relation_name) {
+
   return RC::GENERIC_ERROR;
 }
 
@@ -140,8 +141,18 @@ RC DefaultHandler::create_index(Trx *trx, const char *dbname, const char *relati
 }
 
 RC DefaultHandler::drop_index(Trx *trx, const char *dbname, const char *relation_name, const char *index_name) {
+  Table *table = find_table(dbname, relation_name);
 
-  return RC::GENERIC_ERROR;
+  if (nullptr == table) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  const IndexMeta* index_meta = table->table_meta().index(index_name);
+  if (nullptr == index_meta) {
+    return RC::SCHEMA_INDEX_NOT_EXIST;
+  }
+
+  return table->drop_index(trx, index_name);
 }
 
 RC DefaultHandler::insert_record(Trx *trx, const char *dbname, const char *relation_name, int value_num, const Value *values) {
