@@ -163,8 +163,9 @@ RC DiskBufferPool::close_file(int file_id) {
     return RC::IOERR_CLOSE;
   }
   open_list_[file_id] = nullptr;
-  delete (file_handle);
   LOG_INFO("Successfully close file %d:%s.", file_id, file_handle->file_name);
+  delete (file_handle);
+
   return RC::SUCCESS;
 }
 
