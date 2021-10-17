@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <string>
 #include <ostream>
+#include <ctime>
 
 class TupleValue {
 public:
@@ -70,6 +71,33 @@ public:
   }
 private:
   float value_;
+};
+
+class DateValue : public TupleValue {
+public:
+  explicit DateValue(time_t value) : value_(value) {
+  }
+
+  void to_string(std::ostream &os) const override {
+    struct tm *ptm = std::localtime(&value_);
+    char buffer[32];
+    strftime(buffer, 32, "%Y-%m-%d", ptm);
+    os << buffer;
+  }
+
+  int compare(const TupleValue &other) const override {
+    const DateValue & date_other = (const DateValue &)other;
+    double result = difftime(value_, date_other.value_);
+    if (result > 0) { // 浮点数没有考虑精度问题
+      return 1;
+    }
+    if (result < 0) {
+      return -1;
+    }
+    return 0;
+  }
+private:
+  time_t value_;
 };
 
 class StringValue : public TupleValue {

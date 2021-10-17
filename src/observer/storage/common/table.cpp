@@ -14,6 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <limits.h>
 #include <string.h>
+#include <ctime>
+#include <regex>
 #include <algorithm>
 
 #include "storage/common/table.h"
@@ -278,7 +280,14 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (field->type() != value.type) {
+    // DATES 类型只能从 CHARS 转换而来
+    if (field->type() == DATES) {
+      if (value.type != CHARS) {
+        LOG_ERROR("Invalid value type: can not convert into DATE type. field name=%s, field type=%d, value type=%d",
+          field->name(), field->type(), value.type);
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+    } else if (field->type() != value.type) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
                 field->name(), field->type(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
@@ -292,7 +301,25 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    memcpy(record + field->offset(), value.data, field->len());
+    // 特殊处理 DATES 类型的 field
+    if (field->type() == DATES) {
+      // 获得原始字符串
+      char *date_str = static_cast<char *>(value.data);
+      // 检查日期格式是否合法
+      std::regex date_reg("[0-9]{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])");
+      if (std::regex_match(date_str, date_reg)) {
+        struct tm date;
+        strptime(date_str, "%Y-%m-%d", &date);
+        date.tm_hour = 0; date.tm_min = 0; date.tm_sec = 0;
+        time_t date_time = mktime(&date);
+        memcpy(record + field->offset(), &date_time, sizeof(date_time));
+      } else {
+        LOG_ERROR("Unsupported date format.");
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+    } else {
+      memcpy(record + field->offset(), value.data, field->len());
+    }
   }
 
   record_out = record;
