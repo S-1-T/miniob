@@ -538,19 +538,15 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
 
 RC Table::drop_index(Trx *trx, const char *index_name) {
   Index* index = find_index(index_name);
-  IndexDeleter index_deleter(index);
   std::string index_file = index_data_file(base_dir_.c_str(), name(), index_name);
-
-  RC rc = scan_record(trx, nullptr, -1, &index_deleter, delete_index_record_reader_adapter);
+  RC rc = dynamic_cast<BplusTreeIndex*>(index)->close();
   if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to insert index to all records. table=%s, rc=%d:%s", name(), rc, strrc(rc));
+    LOG_ERROR("Failed to close index file (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
     return rc;
   }
-  std::remove(indexes_.begin(), indexes_.end(), index);
 
   // 删除索引文件
   remove(index_file.c_str());
-  LOG_INFO("remove index file: %s", index_file.c_str());
 
   TableMeta new_table_meta(table_meta_);
   rc = new_table_meta.remove_index(index->index_meta());
