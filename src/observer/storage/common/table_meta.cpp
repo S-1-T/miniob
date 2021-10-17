@@ -101,6 +101,17 @@ RC TableMeta::add_index(const IndexMeta &index) {
   return RC::SUCCESS;
 }
 
+RC TableMeta::remove_index(const IndexMeta &index) {
+  for (auto itr = indexes_.begin(); itr != indexes_.end(); itr++) {
+    if (*itr == index) {
+      indexes_.erase(itr);
+      break;
+    }
+  }
+
+  return RC::SUCCESS;
+}
+
 const char *TableMeta::name() const {
   return name_.c_str();
 }

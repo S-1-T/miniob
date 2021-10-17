@@ -35,6 +35,7 @@ public:
   RC init(const char *name, int field_num, const AttrInfo attributes[]);
 
   RC add_index(const IndexMeta &index);
+  RC remove_index(const IndexMeta &index);
 
 public:
   const char * name() const;

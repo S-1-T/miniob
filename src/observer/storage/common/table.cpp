@@ -436,9 +436,26 @@ private:
   Index * index_;
 };
 
+class IndexDeleter {
+public:
+  explicit IndexDeleter(Index *index) : index_(index) {
+  }
+
+  RC delete_index(const Record *record) {
+    return index_->delete_entry(record->data, &record->rid);
+  }
+private:
+  Index * index_;
+};
+
 static RC insert_index_record_reader_adapter(Record *record, void *context) {
   IndexInserter &inserter = *(IndexInserter *)context;
   return inserter.insert_index(record);
+}
+
+static RC delete_index_record_reader_adapter(Record *record, void *context) {
+  IndexDeleter &deleter = *(IndexDeleter *)context;
+  return deleter.delete_index(record);
 }
 
 RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_name) {
@@ -518,6 +535,61 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
 
   return rc;
 }
+
+RC Table::drop_index(Trx *trx, const char *index_name) {
+  Index* index = find_index(index_name);
+  IndexDeleter index_deleter(index);
+  std::string index_file = index_data_file(base_dir_.c_str(), name(), index_name);
+
+  RC rc = scan_record(trx, nullptr, -1, &index_deleter, delete_index_record_reader_adapter);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to insert index to all records. table=%s, rc=%d:%s", name(), rc, strrc(rc));
+    return rc;
+  }
+  std::remove(indexes_.begin(), indexes_.end(), index);
+
+  // 删除索引文件
+  remove(index_file.c_str());
+  LOG_INFO("remove index file: %s", index_file.c_str());
+
+  TableMeta new_table_meta(table_meta_);
+  rc = new_table_meta.remove_index(index->index_meta());
+
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to add index (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
+    return rc;
+  }
+
+  // 创建元数据临时文件
+  std::string tmp_file = table_meta_file(base_dir_.c_str(), name()) + ".tmp";
+  std::fstream fs;
+  fs.open(tmp_file, std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
+  if (!fs.is_open()) {
+    LOG_ERROR("Failed to open file for write. file name=%s, errmsg=%s", tmp_file.c_str(), strerror(errno));
+    return RC::IOERR; // 创建索引中途出错，要做还原操作
+  }
+  if (new_table_meta.serialize(fs) < 0) {
+    LOG_ERROR("Failed to dump new table meta to file: %s. sys err=%d:%s", tmp_file.c_str(), errno, strerror(errno));
+    return RC::IOERR;
+  }
+  fs.close();
+
+  // 覆盖原始元数据文件
+  std::string meta_file = table_meta_file(base_dir_.c_str(), name());
+  int ret = rename(tmp_file.c_str(), meta_file.c_str());
+  if (ret != 0) {
+    LOG_ERROR("Failed to rename tmp meta file (%s) to normal meta file (%s) while deleting index (%s) on table (%s). " \
+              "system error=%d:%s", tmp_file.c_str(), meta_file.c_str(), index_name, name(), errno, strerror(errno));
+    return RC::IOERR;
+  }
+
+  table_meta_.swap(new_table_meta);
+
+  LOG_INFO("delete index (%s) on the table (%s)", index_name, name());
+
+  return rc;
+}
+
 
 RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value, int condition_num, const Condition conditions[], int *updated_count) {
   return RC::GENERIC_ERROR;

@@ -39,7 +39,7 @@ public:
 public:
   void to_json(Json::Value &json_value) const;
   static RC from_json(const TableMeta &table, const Json::Value &json_value, IndexMeta &index);
-
+  bool operator==(const IndexMeta& indexMeta) {return name_ == indexMeta.name_ && field_ == indexMeta.field_;}
 private:
   std::string       name_;
   std::string       field_;
