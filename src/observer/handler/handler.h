@@ -43,7 +43,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型
-typedef enum { chars, ints, floats } AttrType;
+typedef enum { chars, ints, floats, dates } AttrType;
 //属性值
 typedef struct _Value Value;
 struct _Value {

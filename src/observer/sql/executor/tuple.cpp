@@ -12,6 +12,9 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/14.
 //
 
+#include <ctime>
+#include <iostream>
+
 #include "sql/executor/tuple.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
@@ -50,6 +53,10 @@ void Tuple::add(int value) {
 
 void Tuple::add(float value) {
   add(new FloatValue(value));
+}
+
+void Tuple::add(time_t value) {
+  add(new DateValue(value));
 }
 
 void Tuple::add(const char *s, int len) {
@@ -228,7 +235,12 @@ void TupleRecordConverter::add_record(const char *record) {
         float value = *(float *)(record + field_meta->offset());
         tuple.add(value);
       }
-        break;
+      break;
+      case DATES: {
+        time_t value = *(time_t *)(record + field_meta->offset());
+        tuple.add(value);
+      }
+      break;
       case CHARS: {
         const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
         tuple.add(s, strlen(s));
