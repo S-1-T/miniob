@@ -70,8 +70,10 @@ public:
 public:
   RC commit_insert(Trx *trx, const RID &rid);
   RC commit_delete(Trx *trx, const RID &rid);
+  RC commit_update(Trx *trx, const RID &rid, const char *old_data);
   RC rollback_insert(Trx *trx, const RID &rid);
   RC rollback_delete(Trx *trx, const RID &rid);
+  RC rollback_update(Trx *trx, const RID &rid, const char *old_data);
 
 private:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
@@ -81,6 +83,7 @@ private:
 
   RC insert_record(Trx *trx, Record *record);
   RC delete_record(Trx *trx, Record *record);
+  RC update_record(Trx *trx, Record *record, const char *old_data);
 
 private:
   friend class RecordUpdater;

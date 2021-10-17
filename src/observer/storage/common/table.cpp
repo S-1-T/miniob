@@ -693,10 +693,144 @@ RC Table::drop_index(Trx *trx, const char *index_name) {
   return rc;
 }
 
-RC Table::update_record(Trx *trx, const char *attribute_name,
-            const Value *value, int condition_num,
-            const Condition conditions[], int *updated_count) {
-  return RC::GENERIC_ERROR;
+class RecordUpdater {
+public:
+  RecordUpdater(Table &table, Trx *trx, const int offset, const int len, const void *data) :
+      table_(table), trx_(trx), field_offset_(offset), field_len_(len), data_(data) {}
+
+  RC update_record(Record *record) {
+    LOG_DEBUG("record to update: %p", record);
+    RC rc = RC::SUCCESS;
+    if (memcmp(record->data + field_offset_, data_, field_len_) == 0) {
+      // 无需修改
+      return rc;
+    }
+    int record_size = table_.table_meta_.record_size();
+    char *old_data = new char[record_size];
+    memcpy(old_data, record->data, record_size);
+    memcpy(record->data + field_offset_, data_, field_len_);
+    rc = table_.update_record(trx_, record, old_data);
+    if (rc == RC::SUCCESS) {
+      updated_count_++;
+    }
+    return rc;
+  }
+
+  int updated_count() {
+    return updated_count_;
+  }
+
+private:
+  Table &table_;
+  Trx *trx_;
+  const int field_offset_;
+  const int field_len_;
+  const void *data_;
+  int updated_count_ = 0;
+};
+
+static RC record_reader_updater_adapter(Record *record, void *context) {
+  RecordUpdater &record_updater = *(RecordUpdater *) context;
+  return record_updater.update_record(record);
+}
+
+RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value, int condition_num,
+                        const Condition conditions[], int *updated_count) {
+  auto field_to_update = table_meta_.field(attribute_name);
+  if (field_to_update == nullptr) {
+    LOG_WARN("No such attribute name");
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+  if (field_to_update->type() != value->type) {
+    LOG_WARN("Type of value mismatched");
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+
+  CompositeConditionFilter condition_filter;
+  RC rc = condition_filter.init(*this, conditions, condition_num);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  LOG_DEBUG("field to update: name: %s, offset: %d, len: %d", field_to_update->name(), field_to_update->offset(),
+            field_to_update->len());
+  RecordUpdater updater(*this, trx, field_to_update->offset(), field_to_update->len(), value->data);
+  rc = scan_record(trx, &condition_filter, -1, &updater, record_reader_updater_adapter);
+  if (updated_count != nullptr) {
+    *updated_count = updater.updated_count();
+  }
+  return rc;
+}
+
+RC Table::update_record(Trx *trx, Record *record, const char *old_data) {
+  // 到这里来的都是需要更改的 Record
+  RC rc = RC::SUCCESS;
+  if (trx != nullptr) {
+    trx->init_trx_info(this, *record);
+  }
+  if (trx != nullptr) {
+    rc = trx->update_record(this, record, old_data);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to log operation(update) to trx");
+      return rc;
+    }
+  }
+  rc = record_handler_->update_record(record);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Update record failed. table name=%s, rc=%d:%s", table_meta_.name(), rc, strrc(rc));
+    return rc;
+  }
+  LOG_DEBUG("Update record succeed. table name=%s, rc=%d:%s", table_meta_.name(), rc, strrc(rc));
+  if (trx == nullptr) {
+    rc = delete_entry_of_indexes(old_data, record->rid, true);
+    if (rc != RC::SUCCESS) {
+      LOG_PANIC("Failed to delete old index. table name=%s, rc=%d:%s", name(), rc, strrc(rc));
+    }
+    delete[] old_data;
+    rc = insert_entry_of_indexes(record->data, record->rid);
+    if (rc != RC::SUCCESS) {
+      LOG_PANIC("Failed to add new index. table name=%s, rc=%d:%s", name(), rc, strrc(rc));
+    }
+  }
+  return rc;
+}
+
+
+RC Table::commit_update(Trx *trx, const RID &rid, const char *old_data) {
+  RC rc = RC::SUCCESS;
+  Record record;
+  rc = record_handler_->get_record(&rid, &record);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  // 更新索引
+  rc = delete_entry_of_indexes(old_data, record.rid, true);
+  if (rc != RC::SUCCESS) {
+    LOG_PANIC("Failed to delete old index. table name=%s, rc=%d:%s", name(), rc, strrc(rc));
+  }
+  delete[] old_data;
+  rc = insert_entry_of_indexes(record.data, record.rid);
+  if (rc != RC::SUCCESS) {
+    LOG_PANIC("Failed to add new index. table name=%s, rc=%d:%s", name(), rc, strrc(rc));
+  }
+  return trx->commit_update(this, record);
+}
+
+RC Table::rollback_update(Trx *trx, const RID &rid, const char *old_data) {
+  RC rc = RC::SUCCESS;
+  Record record;
+  rc = record_handler_->get_record(&rid, &record);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  // 恢复数据
+  memcpy(record.data, old_data, table_meta_.record_size());
+  const Record *record_p = &record;
+  rc = record_handler_->update_record(record_p);
+  if (rc != RC::SUCCESS) {
+    LOG_PANIC("Failed to rollback update data. table name=%s, rc=%d:%s", name(), rc, strrc(rc));
+  }
+  delete[] old_data;
+  return trx->rollback_update(this, record);
 }
 
 class RecordDeleter {
