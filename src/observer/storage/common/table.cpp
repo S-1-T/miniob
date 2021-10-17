@@ -301,17 +301,53 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
+    // TODO: 封装一些关于 DATE 类型的公用处理方法
     // 特殊处理 DATES 类型的 field
     if (field->type() == DATES) {
       // 获得原始字符串
       char *date_str = static_cast<char *>(value.data);
-      // 检查日期格式是否合法
-      std::regex date_reg("[0-9]{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])");
+      // 初步检查日期格式是否合法：YYYY-MM-DD 或 YYYY-M-D
+      std::regex date_reg("((19|20)[0-9]{2}-([1-9]|0[1-9]|1[0-2])-([1-9]|0[1-9]|[12][0-9]|3[01]))");
       if (std::regex_match(date_str, date_reg)) {
-        struct tm date;
-        strptime(date_str, "%Y-%m-%d", &date);
-        date.tm_hour = 0; date.tm_min = 0; date.tm_sec = 0;
-        time_t date_time = mktime(&date);
+        time_t rawtime;
+        struct tm *date;
+        time(&rawtime);
+        date = localtime(&rawtime);
+        int pos = 0;
+        int year = 0, month = 0, day = 0;
+        char *pch= strtok(date_str, "-");
+        while (pch != NULL) {
+          if (pos == 0) {
+            year = atoi(pch);
+          } else if (pos == 1) {
+            month = atoi(pch);
+          } else if (pos == 2) {
+            day = atoi(pch);
+          }
+          pos++;
+          pch = strtok(NULL, "-");
+        }
+        // 进一步检查日期是否合法
+        switch (month) {
+        case 2: {
+          if ((year % 4 != 0 && day > 28) || (year % 4 == 0 && day > 29)) {
+            LOG_ERROR("Unsupported date format: incorrect day with the given month.");
+            return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+          }
+          break;
+        }
+        case 4: case 6: case 9: case 11: {
+          if (day > 30) {
+            LOG_ERROR("Unsupported date format: incorrect day with the given month.");
+            return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+          }
+          break;
+        }
+        }
+        date->tm_year = year - 1900;
+        date->tm_mon = month -1;
+        date->tm_mday = day;
+        time_t date_time = mktime(date);
         memcpy(record + field->offset(), &date_time, sizeof(date_time));
       } else {
         LOG_ERROR("Unsupported date format.");
