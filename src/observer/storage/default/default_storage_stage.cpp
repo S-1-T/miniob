@@ -240,7 +240,8 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     break;
   case SCF_DROP_TABLE: {
     const DropTable  &dropTable = sql->sstr.drop_table;
-    rc = handler_->drop_table()
+    rc = handler_->drop_table(current_db, dropTable.relation_name);
+    snprintf(response, sizeof(response), "%s\n", rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
     }
     break;
   case SCF_LOAD_DATA: {
