@@ -73,6 +73,30 @@ RC Db::create_table(const char *table_name, int attribute_count, const AttrInfo 
 
 RC Db::drop_table(const char *table_name) {
   Table *table = find_table(table_name);
+  const TableMeta &table_meta = table->table_meta();
+  RC rc = RC::SUCCESS;
+
+  for (int i=0; i<table_meta.index_num(); ++i) {
+    rc = table->drop_index(nullptr, table_meta.index(i)->name());
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+  }
+
+  rc = table->close();
+  LOG_INFO("table closed");
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to close table file (%s). error=%d:%s", name(), rc, strrc(rc));
+    return rc;
+  }
+  opened_tables_.erase(table->name());
+
+  std::string table_file_path = table_meta_file(path_.c_str(), table->name());
+  std::string data_file = path_ + "/" + table->name() + TABLE_DATA_SUFFIX;
+  LOG_INFO("delete table file %s %s", table_file_path.c_str(), data_file.c_str());
+
+  remove(table_file_path.c_str());
+  remove(data_file.c_str());
 
   return RC::SUCCESS;
 }

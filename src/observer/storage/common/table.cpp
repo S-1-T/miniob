@@ -77,7 +77,7 @@ RC Table::create(const char *path, const char *name, const char *base_dir, int a
     return RC::IOERR;
   }
 
-  close(fd);
+  ::close(fd);
 
   // 创建文件
   if ((rc = table_meta_.init(name, attribute_count, attributes)) != RC::SUCCESS) {
@@ -153,6 +153,17 @@ RC Table::open(const char *meta_file, const char *base_dir) {
     indexes_.push_back(index);
   }
   return rc;
+}
+
+RC Table::close() {
+  sync();
+  data_buffer_pool_->close_file(file_id_);
+
+  file_id_ = -1;
+  data_buffer_pool_ = nullptr;
+  record_handler_ = nullptr;
+
+  return RC::SUCCESS;
 }
 
 RC Table::commit_insert(Trx *trx, const RID &rid) {

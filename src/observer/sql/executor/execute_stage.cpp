@@ -180,6 +180,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       const char *response = "show tables;\n"
           "desc `table name`;\n"
           "create table `table name` (`column name` `column type`, ...);\n"
+          "drop table `table name`;\n"
           "create index `index name` on `table` (`column`);\n"
           "drop index `index name`;\n"
           "insert into `table` values(`value1`,`value2`);\n"
