@@ -234,7 +234,7 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     break;
   case SCF_DROP_INDEX: {
     const DropIndex &dropIndex = sql->sstr.drop_index;
-    rc = handler_->drop_index(current_trx, current_db,"test" , dropIndex.index_name);
+    rc = handler_->drop_index(current_trx, current_db, dropIndex.relation_name , dropIndex.index_name);
     snprintf(response, sizeof(response), "%s\n", rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
     }
     break;

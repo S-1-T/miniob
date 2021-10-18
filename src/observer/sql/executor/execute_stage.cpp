@@ -182,7 +182,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
           "create table `table name` (`column name` `column type`, ...);\n"
           "drop table `table name`;\n"
           "create index `index name` on `table` (`column`);\n"
-          "drop index `index name`;\n"
+          "drop index `index name` on 'table';\n"
           "insert into `table` values(`value1`,`value2`);\n"
           "update `table` set column=value [where `column`=`value`];\n"
           "delete from `table` [where `column`=`value`];\n"

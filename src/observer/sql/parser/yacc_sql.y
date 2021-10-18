@@ -216,10 +216,10 @@ create_index:		/*create index 语句的语法解析树*/
     ;
 
 drop_index:			/*drop index 语句的语法解析树*/
-    DROP INDEX ID  SEMICOLON 
+    DROP INDEX ID ON ID SEMICOLON
 		{
 			CONTEXT->ssql->flag=SCF_DROP_INDEX;//"drop_index";
-			drop_index_init(&CONTEXT->ssql->sstr.drop_index, $3);
+			drop_index_init(&CONTEXT->ssql->sstr.drop_index, $3, $5);
 		}
     ;
 create_table:		/*create table 语句的语法解析树*/

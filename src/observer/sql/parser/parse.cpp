@@ -238,12 +238,15 @@ void create_index_destroy(CreateIndex *create_index) {
   create_index->attribute_name = nullptr;
 }
 
-void drop_index_init(DropIndex *drop_index, const char *index_name) {
+void drop_index_init(DropIndex *drop_index, const char *index_name, const char *relation_name) {
   drop_index->index_name = strdup(index_name);
+  drop_index->relation_name = strdup(relation_name);
 }
 void drop_index_destroy(DropIndex *drop_index) {
   free((char *)drop_index->index_name);
+  free((char *)drop_index->relation_name);
   drop_index->index_name = nullptr;
+  drop_index->relation_name = nullptr;
 }
 
 void desc_table_init(DescTable *desc_table, const char *relation_name) {
