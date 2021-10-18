@@ -219,11 +219,11 @@ create_index:		/*create index 语句的语法解析树*/
     ;
 
 drop_index:			/*drop index 语句的语法解析树*/
-    DROP INDEX ID  SEMICOLON 
-        {
-            CONTEXT->ssql->flag=SCF_DROP_INDEX;//"drop_index";
-            drop_index_init(&CONTEXT->ssql->sstr.drop_index, $3);
-        }
+    DROP INDEX ID ON ID SEMICOLON
+		{
+			CONTEXT->ssql->flag=SCF_DROP_INDEX;//"drop_index";
+			drop_index_init(&CONTEXT->ssql->sstr.drop_index, $3, $5);
+		}
     ;
 create_table:		/*create table 语句的语法解析树*/
     CREATE TABLE ID LBRACE attr_def attr_def_list RBRACE SEMICOLON 
@@ -269,8 +269,7 @@ attr_def:
                 }
                 break;
                 case CHARS: {
-                    // TODO: 支持动态调节 CHARS 类型的大小
-                    attr_info_init(&attribute, CONTEXT->id, $2, 32);
+                    attr_info_init(&attribute, CONTEXT->id, $2, 4);
                 }
                 break;
                 default: {
