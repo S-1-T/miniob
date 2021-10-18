@@ -125,9 +125,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
                 Date date = Date(static_cast<char *>(right.value));
                 time_t date_time_t = date.get_inner_date_time_t();
                 memcpy(right.value, &date_time_t, sizeof(date_time_t));
-            } catch (const std::exception &e) {
+            } catch (const char *e) {
                 LOG_ERROR(
-                    "Invalid right value data to convert into a Date type.");
+                    "Invalid right value data to convert into a Date type. "
+                    "e=%s",
+                    e);
                 return RC::SCHEMA_FIELD_TYPE_MISMATCH;
             }
         }
@@ -137,9 +139,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
                 Date date = Date(static_cast<char *>(left.value));
                 time_t date_time_t = date.get_inner_date_time_t();
                 memcpy(left.value, &date_time_t, sizeof(date_time_t));
-            } catch (const std::exception &e) {
+            } catch (const char *e) {
                 LOG_ERROR(
-                    "Invalid left value data to convert into a Date type.");
+                    "Invalid right value data to convert into a Date type. "
+                    "e=%s",
+                    e);
                 return RC::SCHEMA_FIELD_TYPE_MISMATCH;
             }
         }
@@ -185,7 +189,6 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
             time_t left = *(time_t *)left_value;
             time_t right = *(time_t *)right_value;
             cmp_result = (int)(left - right);
-            printf("\nleft: %ld, right: %ld, cmp_result: %d\n", left, right, cmp_result);
         } break;
         default: {
         }
