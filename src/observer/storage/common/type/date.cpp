@@ -56,11 +56,12 @@ Date::Date(char *date_str) {
         date_tm->tm_hour = 0;
         date_tm->tm_min = 0;
         date_tm->tm_sec = 0;
+    } else {
+        LOG_ERROR("Unsupported date format: incorrect date format.");
+        throw "Unable to create a Date type.";
     }
 }
 
-Date::~Date() {
-    date_tm = nullptr;
-}
+Date::~Date() { date_tm = nullptr; }
 
 time_t Date::get_inner_date_time_t() { return mktime(date_tm); };

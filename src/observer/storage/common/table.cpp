@@ -336,8 +336,10 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
                     time_t date_time_t = date.get_inner_date_time_t();
                     memcpy(record + field->offset(), &date_time_t,
                            sizeof(date_time_t));
-                } catch (const std::exception &e) {
-                    LOG_ERROR("Invalid value data to create a Date type.");
+                } catch (const char *e) {
+                    LOG_ERROR("Invalid value data to create a Date type. e=%s",
+                              e);
+                    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
                 }
                 break;
             }
