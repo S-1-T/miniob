@@ -83,9 +83,10 @@ RC Db::drop_table(const char *table_name) {
 
   const TableMeta &table_meta = table->table_meta();
 
-  for (int i = 0; i < table_meta.index_num(); ++i) {
-    rc = table->drop_index(nullptr, table_meta.index(i)->name());
+  while (table_meta.index_num() != 0) {
+    rc = table->drop_index(nullptr, table_meta.index(0)->name());
     if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to drop index (%s). error=%d:%s", table_meta.index(0)->name(), rc, strrc(rc));
       return rc;
     }
   }

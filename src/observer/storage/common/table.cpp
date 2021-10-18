@@ -28,7 +28,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/bplus_tree_index.h"
 #include "storage/trx/trx.h"
 
-Table::Table() : 
+Table::Table() :
     data_buffer_pool_(nullptr),
     file_id_(-1),
     record_handler_(nullptr) {
@@ -46,7 +46,8 @@ Table::~Table() {
   LOG_INFO("Table has been closed: %s", name());
 }
 
-RC Table::create(const char *path, const char *name, const char *base_dir, int attribute_count, const AttrInfo attributes[]) {
+RC Table::create(const char *path, const char *name, const char *base_dir, int attribute_count,
+                 const AttrInfo attributes[]) {
 
   if (nullptr == name || common::is_blank(name)) {
     LOG_WARN("Name cannot be empty");
@@ -56,7 +57,7 @@ RC Table::create(const char *path, const char *name, const char *base_dir, int a
 
   if (attribute_count <= 0 || nullptr == attributes) {
     LOG_WARN("Invalid arguments. table_name=%s, attribute_count=%d, attributes=%p",
-        name, attribute_count, attributes);
+             name, attribute_count, attributes);
     return RC::INVALID_ARGUMENT;
   }
 
@@ -72,8 +73,8 @@ RC Table::create(const char *path, const char *name, const char *base_dir, int a
                 path, strerror(errno));
       return RC::SCHEMA_TABLE_EXIST;
     }
-    LOG_ERROR("Create table file failed. filename=%s, errmsg=%d:%s", 
-       path, errno, strerror(errno));
+    LOG_ERROR("Create table file failed. filename=%s, errmsg=%d:%s",
+              path, errno, strerror(errno));
     return RC::IOERR;
   }
 
@@ -237,8 +238,9 @@ RC Table::insert_record(Trx *trx, Record *record) {
   }
   return rc;
 }
+
 RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
-  if (value_num <= 0 || nullptr == values ) {
+  if (value_num <= 0 || nullptr == values) {
     LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num, values);
     return RC::INVALID_ARGUMENT;
   }
@@ -266,7 +268,7 @@ const TableMeta &Table::table_meta() const {
   return table_meta_;
 }
 
-RC Table::make_record(int value_num, const Value *values, char * &record_out) {
+RC Table::make_record(int value_num, const Value *values, char *&record_out) {
   // 检查字段类型是否一致
   if (value_num + table_meta_.sys_field_num() != table_meta_.field_num()) {
     return RC::SCHEMA_FIELD_MISSING;
@@ -278,14 +280,14 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
     const Value &value = values[i];
     if (field->type() != value.type) {
       LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
-        field->name(), field->type(), value.type);
+                field->name(), field->type(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
 
   // 复制所有字段的值
   int record_size = table_meta_.record_size();
-  char *record = new char [record_size];
+  char *record = new char[record_size];
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
@@ -328,28 +330,33 @@ RC Table::init_record_handler(const char *base_dir) {
 class RecordReaderScanAdapter {
 public:
   explicit RecordReaderScanAdapter(void (*record_reader)(const char *data, void *context), void *context)
-      : record_reader_(record_reader), context_(context){
+      : record_reader_(record_reader), context_(context) {
   }
 
   void consume(const Record *record) {
     record_reader_(record->data, context_);
   }
+
 private:
   void (*record_reader_)(const char *, void *);
+
   void *context_;
 };
+
 static RC scan_record_reader_adapter(Record *record, void *context) {
-  RecordReaderScanAdapter &adapter = *(RecordReaderScanAdapter *)context;
+  RecordReaderScanAdapter &adapter = *(RecordReaderScanAdapter *) context;
   adapter.consume(record);
   return RC::SUCCESS;
 }
 
-RC Table::scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, void (*record_reader)(const char *data, void *context)) {
+RC Table::scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
+                      void (*record_reader)(const char *data, void *context)) {
   RecordReaderScanAdapter adapter(record_reader, context);
-  return scan_record(trx, filter, limit, (void *)&adapter, scan_record_reader_adapter);
+  return scan_record(trx, filter, limit, (void *) &adapter, scan_record_reader_adapter);
 }
 
-RC Table::scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context)) {
+RC Table::scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context,
+                      RC (*record_reader)(Record *record, void *context)) {
   if (nullptr == record_reader) {
     return RC::INVALID_ARGUMENT;
   }
@@ -378,7 +385,7 @@ RC Table::scan_record(Trx *trx, ConditionFilter *filter, int limit, void *contex
   int record_count = 0;
   Record record;
   rc = scanner.get_first_record(&record);
-  for ( ; RC::SUCCESS == rc && record_count < limit; rc = scanner.get_next_record(&record)) {
+  for (; RC::SUCCESS == rc && record_count < limit; rc = scanner.get_next_record(&record)) {
     if (trx == nullptr || trx->is_visible(this, &record)) {
       rc = record_reader(&record, context);
       if (rc != RC::SUCCESS) {
@@ -443,12 +450,13 @@ public:
   RC insert_index(const Record *record) {
     return index_->insert_entry(record->data, &record->rid);
   }
+
 private:
-  Index * index_;
+  Index *index_;
 };
 
 static RC insert_index_record_reader_adapter(Record *record, void *context) {
-  IndexInserter &inserter = *(IndexInserter *)context;
+  IndexInserter &inserter = *(IndexInserter *) context;
   return inserter.insert_index(record);
 }
 
@@ -532,7 +540,7 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
 
 RC Table::drop_index(Trx *trx, const char *index_name) {
   RC rc = RC::SUCCESS;
-  Index* index = find_index(index_name);
+  Index *index = find_index(index_name);
   if (nullptr == index) {
     rc = RC::SCHEMA_INDEX_NOT_EXIST;
     LOG_ERROR("Failed to find index (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
@@ -540,10 +548,17 @@ RC Table::drop_index(Trx *trx, const char *index_name) {
   }
 
   std::string index_file = index_data_file(base_dir_.c_str(), name(), index_name);
-  rc = dynamic_cast<BplusTreeIndex*>(index)->close();
+  rc = dynamic_cast<BplusTreeIndex *>(index)->close();
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to close index file (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
     return rc;
+  }
+
+  for (auto itr = indexes_.begin(); itr != indexes_.end(); itr++) {
+    if (0 == strcmp((*itr)->index_meta().name(), index_name)) {
+      indexes_.erase(itr);
+      break;
+    }
   }
 
   // 删除索引文件
@@ -588,7 +603,8 @@ RC Table::drop_index(Trx *trx, const char *index_name) {
 }
 
 
-RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value, int condition_num, const Condition conditions[], int *updated_count) {
+RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value, int condition_num,
+                        const Condition conditions[], int *updated_count) {
   return RC::GENERIC_ERROR;
 }
 
@@ -611,13 +627,13 @@ public:
   }
 
 private:
-  Table & table_;
+  Table &table_;
   Trx *trx_;
   int deleted_count_ = 0;
 };
 
 static RC record_reader_delete_adapter(Record *record, void *context) {
-  RecordDeleter &record_deleter = *(RecordDeleter *)context;
+  RecordDeleter &record_deleter = *(RecordDeleter *) context;
   return record_deleter.delete_record(record);
 }
 
@@ -680,7 +696,7 @@ RC Table::rollback_delete(Trx *trx, const RID &rid) {
 
 RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
   RC rc = RC::SUCCESS;
-  for (Index *index : indexes_) {
+  for (Index *index: indexes_) {
     rc = index->insert_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       break;
@@ -691,7 +707,7 @@ RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
 
 RC Table::delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists) {
   RC rc = RC::SUCCESS;
-  for (Index *index : indexes_) {
+  for (Index *index: indexes_) {
     rc = index->delete_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
@@ -742,7 +758,7 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
     return nullptr;
   }
 
-  return index->create_scanner(filter.comp_op(), (const char *)value_cond_desc->value);
+  return index->create_scanner(filter.comp_op(), (const char *) value_cond_desc->value);
 }
 
 IndexScanner *Table::find_index_for_scan(const ConditionFilter *filter) {
@@ -760,7 +776,7 @@ IndexScanner *Table::find_index_for_scan(const ConditionFilter *filter) {
   if (composite_condition_filter != nullptr) {
     int filter_num = composite_condition_filter->filter_num();
     for (int i = 0; i < filter_num; i++) {
-      IndexScanner *scanner= find_index_for_scan(&composite_condition_filter->filter(i));
+      IndexScanner *scanner = find_index_for_scan(&composite_condition_filter->filter(i));
       if (scanner != nullptr) {
         return scanner; // 可以找到一个最优的，比如比较符号是=
       }

@@ -151,11 +151,6 @@ RC DefaultHandler::drop_index(Trx *trx, const char *dbname, const char *relation
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  const IndexMeta* index_meta = table->table_meta().index(index_name);
-  if (nullptr == index_meta) {
-    return RC::SCHEMA_INDEX_NOT_EXIST;
-  }
-
   return table->drop_index(trx, index_name);
 }
 
