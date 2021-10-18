@@ -531,9 +531,16 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
 }
 
 RC Table::drop_index(Trx *trx, const char *index_name) {
+  RC rc = RC::SUCCESS;
   Index* index = find_index(index_name);
+  if (nullptr == index) {
+    rc = RC::SCHEMA_INDEX_NOT_EXIST;
+    LOG_ERROR("Failed to find index (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
+    return rc;
+  }
+
   std::string index_file = index_data_file(base_dir_.c_str(), name(), index_name);
-  RC rc = dynamic_cast<BplusTreeIndex*>(index)->close();
+  rc = dynamic_cast<BplusTreeIndex*>(index)->close();
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to close index file (%s) on table (%s). error=%d:%s", index_name, name(), rc, strrc(rc));
     return rc;

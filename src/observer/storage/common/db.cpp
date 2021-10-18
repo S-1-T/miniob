@@ -27,7 +27,7 @@ See the Mulan PSL v2 for more details. */
 
 
 Db::~Db() {
-  for (auto &iter : opened_tables_) {
+  for (auto &iter: opened_tables_) {
     delete iter.second;
   }
   LOG_INFO("Db has been closed: %s", name_.c_str());
@@ -72,11 +72,18 @@ RC Db::create_table(const char *table_name, int attribute_count, const AttrInfo 
 }
 
 RC Db::drop_table(const char *table_name) {
-  Table *table = find_table(table_name);
-  const TableMeta &table_meta = table->table_meta();
   RC rc = RC::SUCCESS;
 
-  for (int i=0; i<table_meta.index_num(); ++i) {
+  Table *table = find_table(table_name);
+  if (nullptr == table) {
+    rc = RC::SCHEMA_TABLE_NOT_EXIST;
+    LOG_ERROR("Failed to find opened table (%s). error=%d:%s", name(), rc, strrc(rc));
+    return rc;
+  }
+
+  const TableMeta &table_meta = table->table_meta();
+
+  for (int i = 0; i < table_meta.index_num(); ++i) {
     rc = table->drop_index(nullptr, table_meta.index(i)->name());
     if (rc != RC::SUCCESS) {
       return rc;
@@ -84,7 +91,6 @@ RC Db::drop_table(const char *table_name) {
   }
 
   rc = table->close();
-  LOG_INFO("table closed");
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to close table file (%s). error=%d:%s", name(), rc, strrc(rc));
     return rc;
@@ -93,10 +99,9 @@ RC Db::drop_table(const char *table_name) {
 
   std::string table_file_path = table_meta_file(path_.c_str(), table->name());
   std::string data_file = path_ + "/" + table->name() + TABLE_DATA_SUFFIX;
-  LOG_INFO("delete table file %s %s", table_file_path.c_str(), data_file.c_str());
-
   remove(table_file_path.c_str());
   remove(data_file.c_str());
+  LOG_INFO("delete table file %s %s", table_file_path.c_str(), data_file.c_str());
 
   return RC::SUCCESS;
 }
@@ -118,7 +123,7 @@ RC Db::open_all_tables() {
   }
 
   RC rc = RC::SUCCESS;
-  for (const std::string &filename : table_meta_files) {
+  for (const std::string &filename: table_meta_files) {
     Table *table = new Table();
     rc = table->open(filename.c_str(), path_.c_str());
     if (rc != RC::SUCCESS) {
@@ -129,8 +134,8 @@ RC Db::open_all_tables() {
 
     if (opened_tables_.count(table->name()) != 0) {
       delete table;
-      LOG_ERROR("Duplicate table with difference file name. table=%s, the other filename=%s", 
-        table->name(), filename.c_str());
+      LOG_ERROR("Duplicate table with difference file name. table=%s, the other filename=%s",
+                table->name(), filename.c_str());
       return RC::GENERIC_ERROR;
     }
 
