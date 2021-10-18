@@ -447,26 +447,9 @@ private:
   Index * index_;
 };
 
-class IndexDeleter {
-public:
-  explicit IndexDeleter(Index *index) : index_(index) {
-  }
-
-  RC delete_index(const Record *record) {
-    return index_->delete_entry(record->data, &record->rid);
-  }
-private:
-  Index * index_;
-};
-
 static RC insert_index_record_reader_adapter(Record *record, void *context) {
   IndexInserter &inserter = *(IndexInserter *)context;
   return inserter.insert_index(record);
-}
-
-static RC delete_index_record_reader_adapter(Record *record, void *context) {
-  IndexDeleter &deleter = *(IndexDeleter *)context;
-  return deleter.delete_index(record);
 }
 
 RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_name) {
