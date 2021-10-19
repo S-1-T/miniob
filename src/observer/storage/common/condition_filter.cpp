@@ -121,6 +121,9 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
   // 校验和转换
   if (!is_type_convertable(type_left, type_right)) {
+    LOG_WARN(
+        "Two values' types incompatible, left: %d, right: %d",
+        type_left, type_right);
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
   if (type_left == DATES && type_right == CHARS) {
@@ -132,11 +135,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
         time_t date_time_t = date.get_inner_date_time_t();
         memcpy(right.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
-        LOG_ERROR(
+        LOG_WARN(
             "Invalid right value data to convert into a Date type. "
             "e=%s",
             e);
-        return RC::INVALID_ARGUMENT;
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
       }
     }
   } else if (type_left == CHARS && type_right == DATES) {
@@ -148,11 +151,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
         time_t date_time_t = date.get_inner_date_time_t();
         memcpy(left.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
-        LOG_ERROR(
-            "Invalid right value data to convert into a Date type. "
-            "e=%s",
-            e);
-        return RC::INVALID_ARGUMENT;
+        LOG_WARN(
+          "Invalid right value data to convert into a Date type. "
+          "e=%s",
+          e);
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
       }
     }
   }

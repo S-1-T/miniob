@@ -296,27 +296,12 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
       table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
     // 检查 Meta 信息：比对类型信息
-    switch (field->type()) {
-      case DATES: {
-        // DATES 类型只能从 CHARS 转换而来
-        if (value.type != CHARS) {
-          LOG_ERROR(
-            "Invalid value type: can not convert into DATE type. "
-            "field "
-            "name=%s, field type=%d, value type=%d",
-            field->name(), field->type(), value.type);
-          return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-        }
-        break;
-      }
-      default:
-        if (!is_type_convertable(field->type(), value.type)) {
-          LOG_ERROR(
-            "Invalid value type. field name=%s, type=%d, but "
-            "given=%d",
-            field->name(), field->type(), value.type);
-          return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-        }
+    if (!is_type_convertable(field->type(), value.type)) {
+      LOG_ERROR(
+        "Invalid value type. field name=%s, type=%d, but "
+        "given=%d",
+        field->name(), field->type(), value.type);
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
   // 复制所有字段的值
