@@ -1,9 +1,10 @@
-/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its
-affiliates. All rights reserved. miniob is licensed under Mulan PSL v2. You can
-use this software according to the terms and conditions of the Mulan PSL v2. You
-may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2 THIS
-SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+/* Copyright (c) 2021 Xie Meiyi(xiemeiyi@hust.edu.cn) and OceanBase and/or its affiliates. All rights reserved.
+miniob is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+         http://license.coscl.org.cn/MulanPSL2
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
@@ -114,12 +115,11 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     }
 
     // 校验和转换
-    if (!((type_left == type_right) ||
-          (type_left == DATES && type_right == CHARS) ||
-          (type_left == CHARS && type_right == DATES))) {
+    if (!field_type_compare_compatible_table[type_left][type_right]) {
         return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
     if (type_left == DATES && type_right == CHARS) {
+        type_right = DATES;
         if (right.value != nullptr) {
             try {
                 Date date = Date(static_cast<char *>(right.value));
@@ -134,6 +134,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
             }
         }
     } else if (type_left == CHARS && type_right == DATES) {
+        type_left = DATES;
         if (left.value != nullptr) {
             try {
                 Date date = Date(static_cast<char *>(left.value));
