@@ -24,13 +24,9 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/common/condition_filter.h"
-#include "storage/common/index.h"
 #include "storage/common/meta_util.h"
-#include "storage/common/record_manager.h"
-#include "storage/common/table_meta.h"
-#include "storage/common/type/date.h"
-#include "storage/default/disk_buffer_pool.h"
 #include "storage/trx/trx.h"
+#include "storage/common/type/convert.h"
 
 Table::Table()
   : data_buffer_pool_(nullptr), file_id_(-1), record_handler_(nullptr) {}
@@ -314,7 +310,7 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
         break;
       }
       default:
-        if (field->type() != value.type) {
+        if (!is_type_convertable(field->type(), value.type)) {
           LOG_ERROR(
             "Invalid value type. field name=%s, type=%d, but "
             "given=%d",
@@ -330,22 +326,9 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
     const FieldMeta *field =
       table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    switch (field->type()) {
-      case DATES: {
-        try {
-          Date date = Date(static_cast<char *>(value.data));
-          time_t date_time_t = date.get_inner_date_time_t();
-          memcpy(record + field->offset(), &date_time_t,
-               sizeof(date_time_t));
-        } catch (const char *e) {
-          LOG_ERROR("Invalid value data to create a Date type. e=%s",
-                e);
-          return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-        }
-        break;
-      }
-      default:
-        memcpy(record + field->offset(), value.data, field->len());
+    if (convert_type(value.type, value.data, field->type(),
+                     record + field->offset(), field->len()) != RC::SUCCESS) {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
   record_out = record;
@@ -741,11 +724,17 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
     LOG_WARN("No such attribute name");
     return RC::SCHEMA_FIELD_MISSING;
   }
-  if (field_to_update->type() != value->type) {
+
+  if (!is_type_convertable(field_to_update->type(), value->type)) {
     LOG_WARN("Type of value mismatched");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
-
+  void *data = new char[field_to_update->len()];
+  // 需要做隐式转换
+  if (convert_type(value->type, value->data, field_to_update->type(),
+                   data, field_to_update->len()) != RC::SUCCESS) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
   CompositeConditionFilter condition_filter;
   RC rc = condition_filter.init(*this, conditions, condition_num);
   if (rc != RC::SUCCESS) {
@@ -753,8 +742,9 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
   }
   LOG_DEBUG("field to update: name: %s, offset: %d, len: %d", field_to_update->name(), field_to_update->offset(),
             field_to_update->len());
-  RecordUpdater updater(*this, trx, field_to_update->offset(), field_to_update->len(), value->data);
+  RecordUpdater updater(*this, trx, field_to_update->offset(), field_to_update->len(), data);
   rc = scan_record(trx, &condition_filter, -1, &updater, record_reader_updater_adapter);
+  delete[] data;
   if (updated_count != nullptr) {
     *updated_count = updater.updated_count();
   }
