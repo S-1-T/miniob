@@ -41,13 +41,7 @@ public:
 
 protected:
   // 目前有 5 种类型：UNDEFINED, CHARS, INTS, FLOATS, DATES
-  bool field_type_compare_compatible_table[5][5] = {  
-    {0, 0, 0, 0, 0}, /* UNDEFINE 与其他任何一种类型不可比较 */
-    {0, 1, 0, 0, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
-    {0, 0, 1, 0, 0}, /* INTS 目前仅可与自身比较（TODO：支持 FLOATS） */
-    {0, 0, 0, 1, 0}, /* FLOATS 目前仅可与自身比较（TODO：支持 INTS） */
-    {0, 1, 0, 0, 1}  /* CHARS 目前仅可与自身和 CHARS 比较 */
-  };
+  static const bool field_type_compare_compatible_table[5][5];
 };
 
 class DefaultConditionFilter : public ConditionFilter {
