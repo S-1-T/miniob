@@ -87,11 +87,11 @@ public:
 
   int compare(const TupleValue &other) const override {
     const DateValue & date_other = (const DateValue &)other;
-    double result = difftime(value_, date_other.value_);
-    if (result > 0) { // 浮点数没有考虑精度问题
+    double diff_seconds = difftime(value_, date_other.value_);
+    if (diff_seconds > 0) {
       return 1;
     }
-    if (result < 0) {
+    if (diff_seconds < 0) {
       return -1;
     }
     return 0;

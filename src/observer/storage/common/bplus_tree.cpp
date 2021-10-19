@@ -184,11 +184,12 @@ int CompareKey(const char *pdata, const char *pkey,AttrType attr_type,int attr_l
     case DATES: {
       d1 = *(time_t *) pdata;
       d2 = *(time_t *) pkey;
-      if (d1 > d2)
+      double diff_seconds = difftime(d1, d2);
+      if (diff_seconds > 0)
         return 1;
-      if (d1 < d2)
+      if (diff_seconds < 0)
         return -1;
-      if (d1 == d2)
+      if (diff_seconds == 0)
         return 0;
     }
       break;
@@ -1856,7 +1857,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag= 0 == float_compare(f1, f2);
           break;
         case DATES:
-          flag=(d1==d2);
+          flag=(difftime(d1, d2)==0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)==0);
@@ -1874,7 +1875,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag=(f1<f2);
           break;
         case DATES:
-          flag=(d1<d2);
+          flag=(difftime(d1, d2)<0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)<0);
@@ -1892,7 +1893,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag=(f1>f2);
           break;
         case DATES:
-          flag=(d1>d2);
+          flag=(difftime(d1, d2)>0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)>0);
@@ -1910,7 +1911,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag=(f1<=f2);
           break;
         case DATES:
-          flag=(d1<=d2);
+          flag=(difftime(d1, d2)<=0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)<=0);
@@ -1928,7 +1929,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag=(f1>=f2);
           break;
         case DATES:
-          flag=(d1>=d2);
+          flag=(difftime(d1, d2)>=0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)>=0);
@@ -1946,7 +1947,7 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
           flag= 0 != float_compare(f1, f2);
           break;
         case DATES:
-          flag=(d1!=d2);
+          flag=(difftime(d1, d2)!=0);
           break;
         case CHARS:
           flag=(strncmp(s1,s2,attr_length)!=0);
