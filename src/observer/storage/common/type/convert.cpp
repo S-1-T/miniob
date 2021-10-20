@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <algorithm>
 
 #include "common/log/log.h"
 #include "storage/common/type/convert.h"
@@ -46,6 +47,10 @@ RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *des
       } else {
         memcpy(dest_data, src_data, len);
       }
+      break;
+    }
+    case CHARS: {
+      memcpy(dest_data, src_data, std::min(len, (int)strlen(static_cast<char *>(src_data)) + 1));
       break;
     }
     case DATES: {
