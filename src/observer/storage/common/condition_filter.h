@@ -23,6 +23,7 @@ class Table;
 
 struct ConDesc {
   bool   is_attr;     // 是否属性，false 表示是值
+  AttrType attr_type; // 属性类型
   int    attr_length; // 如果是属性，表示属性值长度
   int    attr_offset; // 如果是属性，表示在记录中的偏移量
   void * value;       // 如果是值类型，这里记录值的数据
@@ -38,10 +39,6 @@ public:
    * @return true means match condition, false means failed to match.
    */
   virtual bool filter(const Record &rec) const = 0;
-
-protected:
-  // 目前有 5 种类型：UNDEFINED, CHARS, INTS, FLOATS, DATES
-  static const bool field_type_compare_compatible_table[5][5];
 };
 
 class DefaultConditionFilter : public ConditionFilter {

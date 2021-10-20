@@ -12,24 +12,17 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/7.
 //
 
-#include "condition_filter.h"
+#include <cmath>
 
-#include <stddef.h>
+#include "condition_filter.h"
 
 #include "common/log/log.h"
 #include "record_manager.h"
 #include "storage/common/table.h"
 #include "storage/common/type/date.h"
+#include "storage/common/type/convert.h"
 
 using namespace common;
-
-const bool ConditionFilter::field_type_compare_compatible_table[5][5] = {
-    {0, 0, 0, 0, 0}, /* UNDEFINE 与其他任何一种类型不可比较 */
-    {0, 1, 0, 0, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
-    {0, 0, 1, 0, 0}, /* INTS 目前仅可与自身比较（TODO：支持 FLOATS） */
-    {0, 0, 0, 1, 0}, /* FLOATS 目前仅可与自身比较（TODO：支持 INTS） */
-    {0, 1, 0, 0, 1} /* DATES 目前仅可与自身和 CHARS 比较 */
-};
 
 ConditionFilter::~ConditionFilter() {}
 
@@ -90,6 +83,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     left.value = nullptr;
 
     type_left = field_left->type();
+    left.attr_type = type_left;
   } else {
     left.is_attr = false;
     left.value = condition.left_value.data;  // 校验type 或者转换类型
@@ -97,6 +91,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     left.attr_length = 0;
     left.attr_offset = 0;
+    left.attr_type = type_left;
   }
 
   if (1 == condition.right_is_attr) {
@@ -113,6 +108,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     type_right = field_right->type();
 
     right.value = nullptr;
+    right.attr_type = type_right;
   } else {
     right.is_attr = false;
     right.value = condition.right_value.data;
@@ -120,40 +116,46 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     right.attr_length = 0;
     right.attr_offset = 0;
+    right.attr_type = type_right;
   }
 
   // 校验和转换
-  if (!field_type_compare_compatible_table[type_left][type_right]) {
+  if (!is_type_convertable(type_left, type_right)) {
+    LOG_WARN(
+        "Two values' types incompatible, left: %d, right: %d",
+        type_left, type_right);
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
   if (type_left == DATES && type_right == CHARS) {
     type_right = DATES;
+    right.attr_type = DATES;
     if (right.value != nullptr) {
       try {
         Date date = Date(static_cast<char *>(right.value));
         time_t date_time_t = date.get_inner_date_time_t();
         memcpy(right.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
-        LOG_ERROR(
+        LOG_WARN(
             "Invalid right value data to convert into a Date type. "
             "e=%s",
             e);
-        return RC::INVALID_ARGUMENT;
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
       }
     }
   } else if (type_left == CHARS && type_right == DATES) {
     type_left = DATES;
+    left.attr_type = DATES;
     if (left.value != nullptr) {
       try {
         Date date = Date(static_cast<char *>(left.value));
         time_t date_time_t = date.get_inner_date_time_t();
         memcpy(left.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
-        LOG_ERROR(
-            "Invalid right value data to convert into a Date type. "
-            "e=%s",
-            e);
-        return RC::INVALID_ARGUMENT;
+        LOG_WARN(
+          "Invalid right value data to convert into a Date type. "
+          "e=%s",
+          e);
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
       }
     }
   }
@@ -177,6 +179,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
   }
 
   int cmp_result = 0;
+  // 这里的 attr_type_ 是 left_value 的类型
   switch (attr_type_) {
     case CHARS: {  // 字符串都是定长的，直接比较
       // 按照C字符串风格来定
@@ -185,14 +188,41 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
     case INTS: {
       // 没有考虑大小端问题
       // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
-      int left = *(int *)left_value;
-      int right = *(int *)right_value;
-      cmp_result = left - right;
+      if (right_.attr_type == FLOATS) {
+        int left = *(int *) left_value;
+        float right = *(float *) right_value;
+        float result = (float)left - right;
+        if (result <= 1e-6 && result >= -1e-6) {
+          cmp_result = 0;
+        } else if (result > 0) {
+          cmp_result = 1;
+        } else {
+          cmp_result = -1;
+        }
+      } else {
+        int left = *(int *) left_value;
+        int right = *(int *) right_value;
+        cmp_result = left - right;
+      }
     } break;
     case FLOATS: {
       float left = *(float *)left_value;
-      float right = *(float *)right_value;
-      cmp_result = (int)(left - right);
+      float right = 0;
+      if (right_.attr_type == INTS) {
+        right = (float)(*(int *)right_value);
+      } else {
+        right = *(float *)right_value;
+      }
+      LOG_DEBUG("left: %f, right: %f", left, right);
+      float result = left - right;
+      if (result <= 1e-6 && result >= -1e-6) {
+        cmp_result = 0;
+      } else if (result > 0) {
+        cmp_result = 1;
+      } else {
+        cmp_result = -1;
+      }
+      LOG_DEBUG("cmp result: %d", cmp_result);
     } break;
     case DATES: {
       time_t left = *(time_t *)left_value;

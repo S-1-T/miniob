@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <ostream>
 #include <ctime>
+#include <cstdio>
 
 class TupleValue {
 public:
@@ -55,7 +56,21 @@ public:
   }
 
   void to_string(std::ostream &os) const override {
-    os << value_;
+    int sz = std::snprintf(nullptr, 0, "%.2f", value_);
+    char output[sz + 1];
+    memset(output, 0, sz + 1);
+    std::snprintf(output, sz + 1, "%.2f", value_);
+    // 消除后缀 0
+    for (int i = sz; i >= 0; i--) {
+      if (output[i] != '\0' && output[i] != '0') {
+        output[i + 1] = '\0';
+        if (output[i] == '.') {
+          output[i] = '\0';
+        }
+        break;
+      }
+    }
+    os << output;
   }
 
   int compare(const TupleValue &other) const override {

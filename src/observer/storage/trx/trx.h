@@ -28,7 +28,7 @@ class Table;
 
 class Operation {
 public:
-  enum class Type: int {
+  enum class Type : int {
     INSERT,
     UPDATE,
     DELETE,
@@ -36,28 +36,39 @@ public:
   };
 
 public:
-  Operation(Type type, const RID &rid) : type_(type), page_num_(rid.page_num), slot_num_(rid.slot_num){
+  Operation(Type type, const RID &rid) : type_(type), page_num_(rid.page_num), slot_num_(rid.slot_num) {
   }
+
+  Operation(Type type, const RID &rid, const char *old_data) :
+    type_(type), old_data_(old_data), page_num_(rid.page_num), slot_num_(rid.slot_num) {}
 
   Type type() const {
     return type_;
   }
-  PageNum  page_num() const {
+
+  PageNum page_num() const {
     return page_num_;
   }
-  SlotNum  slot_num() const {
+
+  SlotNum slot_num() const {
     return slot_num_;
+  }
+
+  const char * old_data() const {
+    return old_data_;
   }
 
 private:
   Type type_;
-  PageNum  page_num_;
-  SlotNum  slot_num_;
+  const char *old_data_;
+  PageNum page_num_;
+  SlotNum slot_num_;
 };
+
 class OperationHasher {
 public:
-  size_t operator() (const Operation &op) const {
-    return (((size_t)op.page_num()) << 32) | (op.slot_num());
+  size_t operator()(const Operation &op) const {
+    return (((size_t) op.page_num()) << 32) | (op.slot_num());
   }
 };
 
@@ -76,23 +87,37 @@ public:
 class Trx {
 public:
   static int32_t default_trx_id();
+
   static int32_t next_trx_id();
+
   static const char *trx_field_name();
+
   static AttrType trx_field_type();
-  static int      trx_field_len();
+
+  static int trx_field_len();
 
 public:
   Trx();
+
   ~Trx();
 
 public:
   RC insert_record(Table *table, Record *record);
+
   RC delete_record(Table *table, Record *record);
 
+  RC update_record(Table *table, Record *record, const char *old_data);
+
   RC commit();
+
   RC rollback();
 
   RC commit_insert(Table *table, Record &record);
+
+  RC commit_update(Table *table, Record &record);
+
+  RC rollback_update(Table *table, Record &record);
+
   RC rollback_delete(Table *table, Record &record);
 
   bool is_visible(Table *table, const Record *record);
@@ -101,19 +126,25 @@ public:
 
 private:
   void set_record_trx_id(Table *table, Record &record, int32_t trx_id, bool deleted) const;
+
   static void get_record_trx_id(Table *table, const Record &record, int32_t &trx_id, bool &deleted);
 
 private:
   using OperationSet = std::unordered_set<Operation, OperationHasher, OperationEqualer>;
 
   Operation *find_operation(Table *table, const RID &rid);
+
   void insert_operation(Table *table, Operation::Type type, const RID &rid);
+
+  void insert_operation(Table *table, Operation::Type type, const RID &rid, const char *old_data);
+
   void delete_operation(Table *table, const RID &rid);
 
 private:
   void start_if_not_started();
+
 private:
-  int32_t  trx_id_ = 0;
+  int32_t trx_id_ = 0;
   std::unordered_map<Table *, OperationSet> operations_;
 };
 
