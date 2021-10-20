@@ -24,11 +24,11 @@ See the Mulan PSL v2 for more details. */
 using namespace common;
 
 const bool ConditionFilter::field_type_compare_compatible_table[5][5] = {
-  {0, 0, 0, 0, 0}, /* UNDEFINE 与其他任何一种类型不可比较 */
-  {0, 1, 0, 0, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
-  {0, 0, 1, 0, 0}, /* INTS 目前仅可与自身比较（TODO：支持 FLOATS） */
-  {0, 0, 0, 1, 0}, /* FLOATS 目前仅可与自身比较（TODO：支持 INTS） */
-  {0, 1, 0, 0, 1} /* DATES 目前仅可与自身和 CHARS 比较 */
+    {0, 0, 0, 0, 0}, /* UNDEFINE 与其他任何一种类型不可比较 */
+    {0, 1, 0, 0, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
+    {0, 0, 1, 0, 0}, /* INTS 目前仅可与自身比较（TODO：支持 FLOATS） */
+    {0, 0, 0, 1, 0}, /* FLOATS 目前仅可与自身比较（TODO：支持 INTS） */
+    {0, 1, 0, 0, 1} /* DATES 目前仅可与自身和 CHARS 比较 */
 };
 
 ConditionFilter::~ConditionFilter() {}
@@ -47,16 +47,16 @@ DefaultConditionFilter::DefaultConditionFilter() {
 DefaultConditionFilter::~DefaultConditionFilter() {}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
-                AttrType attr_type, CompOp comp_op) {
+                                AttrType attr_type, CompOp comp_op) {
   if (attr_type < CHARS || attr_type > DATES) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d",
-          attr_type);
+              attr_type);
     return RC::INVALID_ARGUMENT;
   }
 
   if (comp_op < EQUAL_TO || comp_op >= NO_OP) {
     LOG_ERROR("Invalid condition with unsupported compare operation: %d",
-          comp_op);
+              comp_op);
     return RC::INVALID_ARGUMENT;
   }
 
@@ -78,10 +78,10 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   if (1 == condition.left_is_attr) {
     left.is_attr = true;
     const FieldMeta *field_left =
-      table_meta.field(condition.left_attr.attribute_name);
+        table_meta.field(condition.left_attr.attribute_name);
     if (nullptr == field_left) {
       LOG_WARN("No such field in condition. %s.%s", table.name(),
-           condition.left_attr.attribute_name);
+               condition.left_attr.attribute_name);
       return RC::SCHEMA_FIELD_MISSING;
     }
     left.attr_length = field_left->len();
@@ -102,10 +102,10 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   if (1 == condition.right_is_attr) {
     right.is_attr = true;
     const FieldMeta *field_right =
-      table_meta.field(condition.right_attr.attribute_name);
+        table_meta.field(condition.right_attr.attribute_name);
     if (nullptr == field_right) {
       LOG_WARN("No such field in condition. %s.%s", table.name(),
-           condition.right_attr.attribute_name);
+               condition.right_attr.attribute_name);
       return RC::SCHEMA_FIELD_MISSING;
     }
     right.attr_length = field_right->len();
@@ -135,10 +135,10 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
         memcpy(right.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
         LOG_ERROR(
-          "Invalid right value data to convert into a Date type. "
-          "e=%s",
-          e);
-        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+            "Invalid right value data to convert into a Date type. "
+            "e=%s",
+            e);
+        return RC::INVALID_ARGUMENT;
       }
     }
   } else if (type_left == CHARS && type_right == DATES) {
@@ -150,10 +150,10 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
         memcpy(left.value, &date_time_t, sizeof(date_time_t));
       } catch (const char *e) {
         LOG_ERROR(
-          "Invalid right value data to convert into a Date type. "
-          "e=%s",
-          e);
-        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+            "Invalid right value data to convert into a Date type. "
+            "e=%s",
+            e);
+        return RC::INVALID_ARGUMENT;
       }
     }
   }
@@ -233,19 +233,19 @@ CompositeConditionFilter::~CompositeConditionFilter() {
 }
 
 RC CompositeConditionFilter::init(const ConditionFilter *filters[],
-                  int filter_num, bool own_memory) {
+                                  int filter_num, bool own_memory) {
   filters_ = filters;
   filter_num_ = filter_num;
   memory_owner_ = own_memory;
   return RC::SUCCESS;
 }
 RC CompositeConditionFilter::init(const ConditionFilter *filters[],
-                  int filter_num) {
+                                  int filter_num) {
   return init(filters, filter_num, false);
 }
 
 RC CompositeConditionFilter::init(Table &table, const Condition *conditions,
-                  int condition_num) {
+                                  int condition_num) {
   if (condition_num == 0) {
     return RC::SUCCESS;
   }
@@ -257,7 +257,7 @@ RC CompositeConditionFilter::init(Table &table, const Condition *conditions,
   ConditionFilter **condition_filters = new ConditionFilter *[condition_num];
   for (int i = 0; i < condition_num; i++) {
     DefaultConditionFilter *default_condition_filter =
-      new DefaultConditionFilter();
+        new DefaultConditionFilter();
     rc = default_condition_filter->init(table, conditions[i]);
     if (rc != RC::SUCCESS) {
       delete default_condition_filter;
@@ -271,8 +271,7 @@ RC CompositeConditionFilter::init(Table &table, const Condition *conditions,
     }
     condition_filters[i] = default_condition_filter;
   }
-  return init((const ConditionFilter **)condition_filters, condition_num,
-        true);
+  return init((const ConditionFilter **)condition_filters, condition_num, true);
 }
 
 bool CompositeConditionFilter::filter(const Record &rec) const {

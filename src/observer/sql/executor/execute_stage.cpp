@@ -121,12 +121,14 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
   exe_event->push_callback(cb);
 
+  char response[256] = "";
   switch (sql->flag) {
-    case SCF_SELECT: { // select
-      do_select(current_db, sql, exe_event->sql_event()->session_event());
-      exe_event->done_immediate();
-    }
-    break;
+    case SCF_SELECT: {  // select
+      RC rc =
+          do_select(current_db, sql, exe_event->sql_event()->session_event());
+      // 出错时返回 FAILURE
+      if (rc != RC::SUCCESS) snprintf(response, sizeof(response), "FAILURE\n");
+    } break;
 
     case SCF_INSERT:
     case SCF_UPDATE:
@@ -136,7 +138,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     case SCF_DESC_TABLE:
     case SCF_DROP_TABLE:
     case SCF_CREATE_INDEX:
-    case SCF_DROP_INDEX: 
+    case SCF_DROP_INDEX:
     case SCF_LOAD_DATA: {
       StorageEvent *storage_event = new (std::nothrow) StorageEvent(exe_event);
       if (storage_event == nullptr) {
@@ -146,63 +148,50 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       }
 
       default_storage_stage_->handle_event(storage_event);
-    }
-    break;
+    } break;
     case SCF_SYNC: {
       RC rc = DefaultHandler::get_default().sync();
-      session_event->set_response(strrc(rc));
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response), "%s\n", strrc(rc));
+    } break;
     case SCF_BEGIN: {
       session_event->get_client()->session->set_trx_multi_operation_mode(true);
-      session_event->set_response(strrc(RC::SUCCESS));
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response), "%s\n", strrc(RC::SUCCESS));
+    } break;
     case SCF_COMMIT: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->commit();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
-      session_event->set_response(strrc(rc));
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response), "%s\n", strrc(rc));
+    } break;
     case SCF_ROLLBACK: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->rollback();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
-      session_event->set_response(strrc(rc));
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response), "%s\n", strrc(rc));
+    } break;
     case SCF_HELP: {
-      const char *response = "show tables;\n"
-          "desc `table name`;\n"
-          "create table `table name` (`column name` `column type`, ...);\n"
-          "drop table `table name`;\n"
-          "create index `index name` on `table` (`column`);\n"
-          "drop index `index name` on 'table';\n"
-          "insert into `table` values(`value1`,`value2`);\n"
-          "update `table` set column=value [where `column`=`value`];\n"
-          "delete from `table` [where `column`=`value`];\n"
-          "select [ * | `columns` ] from `table`;\n";
-      session_event->set_response(response);
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response),
+               "show tables;\n"
+               "desc `table name`;\n"
+               "create table `table name` (`column name` `column type`, ...);\n"
+               "drop table `table name`;\n"
+               "create index `index name` on `table` (`column`);\n"
+               "drop index `index name` on 'table';\n"
+               "insert into `table` values(`value1`,`value2`);\n"
+               "update `table` set column=value [where `column`=`value`];\n"
+               "delete from `table` [where `column`=`value`];\n"
+               "select [ * | `columns` ] from `table`;\n");
+    } break;
     case SCF_EXIT: {
       // do nothing
-      const char *response = "Unsupported\n";
-      session_event->set_response(response);
-      exe_event->done_immediate();
-    }
-    break;
+      snprintf(response, sizeof(response), "Unsupported\n");
+    } break;
     default: {
-      exe_event->done_immediate();
       LOG_ERROR("Unsupported command=%d\n", sql->flag);
     }
   }
+  if (strlen(response) > 0) session_event->set_response(response);
+  exe_event->done_immediate();
 }
 
 void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
