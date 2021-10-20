@@ -2,7 +2,6 @@ SHELL := $(shell which bash)
 
 PROJECT_ROOT = $(shell pwd)
 TEST_SQL_DIRECTORIES = $(shell pwd)/test/sql
-TEST_SQL_RES_DIRECTORIES = $(shell pwd)/test/sql/res
 
 TEST_SQL_FILES = $(shell find $(TEST_SQL_DIRECTORIES) -name "*.sql")
 
@@ -63,6 +62,9 @@ run-client:
 	$(CLIENT_BIN)
 
 sql-test:
-	@echo "Please make sure observer is running before the test."
-	@find $(TEST_SQL_DIRECTORIES) -iname "*.sql" | xargs -S 1000 -I {} \
-		sh -c '$(CLIENT_BIN) < "{}" > "{}".tmp.res; (diff "{}".tmp.res "{}".res > /dev/null && echo "Test {}" PASSED) || echo "Test {}" FAILED; rm -rf "{}".tmp.res'
+	@echo "Start to test all SQL files..."
+	@for sql_file in $(TEST_SQL_FILES); do \
+		$(CLIENT_BIN) < $$sql_file | tr -d '\r' > $$sql_file.tmp.res && \
+		(diff $$sql_file.tmp.res $$sql_file.res > /dev/null && echo "Test $$sql_file PASSED") || \
+		echo "Test $$sql_file FAILED"; rm -rf $$sql_file.tmp.res; \
+	done
