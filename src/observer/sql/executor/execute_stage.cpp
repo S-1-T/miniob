@@ -234,6 +234,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
       for (SelectExeNode *& tmp_node: select_nodes) {
         delete tmp_node;
       }
+      session_event->set_response("FAILURE\n");
       end_trx_if_need(session, trx, false);
       return rc;
     }
