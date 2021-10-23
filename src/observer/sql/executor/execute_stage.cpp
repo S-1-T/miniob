@@ -386,10 +386,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     return rc;
   }
 
-  for (size_t i = 0; i<selects.aggregation_num; i++) {
-    LOG_ERROR("%d", selects.aggregations[i].aggregationType);
-  }
-
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {

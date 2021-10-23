@@ -625,10 +625,10 @@ comOp:
     ;
 
 aggregation:
-	MAX { CONTEXT->aggregation = MaxAggregate; printf("->1<-\n");}
-    | MIN { CONTEXT->aggregation = MinAggregate;  printf("->2<-\n");}
-    | COUNT { CONTEXT->aggregation = CountAggregate;  printf("->3<-\n");}
-    | SUM { CONTEXT->aggregation = SumAggregate;  printf("->4<-\n");}
+	MAX { CONTEXT->aggregation = MaxAggregate; }
+    | MIN { CONTEXT->aggregation = MinAggregate; }
+    | COUNT { CONTEXT->aggregation = CountAggregate; }
+    | SUM { CONTEXT->aggregation = SumAggregate; }
     ;
 
 load_data:

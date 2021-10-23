@@ -109,7 +109,6 @@ void aggregation_info_init(AggAttr *agg_info, const char *relation_name, const c
   }
   agg_info->attribute_name = strdup(attribute_name);
   agg_info->aggregationType = aggregationType;
-  LOG_ERROR("agg init %d", aggregationType);
 }
 
 void aggregation_info_destroy(AggAttr *aggregation_info) {
@@ -136,7 +135,6 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
 }
 
 void selects_append_aggregation(Selects *selects, AggAttr *agg_attr) {
-  LOG_ERROR("add index %d, what: %d", selects->aggregation_num, (*agg_attr).aggregationType);
   selects->aggregations[selects->aggregation_num++] = *agg_attr;
 }
 
