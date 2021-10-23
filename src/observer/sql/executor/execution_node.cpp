@@ -53,20 +53,20 @@ RC SelectExeNode::execute(TupleSet &tuple_set) {
   tuple_set.clear();
   tuple_set.set_schema(tuple_schema_);
 
-  if (isAggregation_) {
-    TupleRecordAggregation converter(table_, tuple_set);
-
-    // TODO:: 需要 add_aggregation and initialize, std::move ??
-    for (int i = 0; i< aggregationInfos_.size(); i++) {
-      converter.add_aggregation(aggregationInfos_[i]);
-    }
-    converter.generateInitialAggregateValue();
-
-    rc = table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, aggregation_reader);
-  } else {
+//  if (isAggregation_) {
+//    TupleRecordAggregation converter(table_, tuple_set);
+//
+//    // TODO:: 需要 add_aggregation and initialize, std::move ??
+//    for (int i = 0; i< aggregationInfos_.size(); i++) {
+//      converter.add_aggregation(aggregationInfos_[i]);
+//    }
+//    converter.generateInitialAggregateValue();
+//
+//    rc = table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, aggregation_reader);
+//  } else {
     TupleRecordConverter converter(table_, tuple_set);
     rc = table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, record_reader);
-  }
+//  }
 
   return rc;
 }

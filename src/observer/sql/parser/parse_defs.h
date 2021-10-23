@@ -35,8 +35,13 @@ typedef enum  {
 typedef struct {
   char *relation_name;   // relation name (may be NULL) 表名
   char *attribute_name;  // attribute name              属性名
-  AggregationType* aggregationType;   // 如果不是聚合,置为nullptr
 } RelAttr;
+
+typedef struct {
+  char *relation_name;   // relation name (may be NULL) 表名
+  char *attribute_name;  // attribute name              属性名
+  AggregationType aggregationType;
+} AggAttr;
 
 typedef enum {
   EQUAL_TO,     //"="     0
@@ -74,7 +79,7 @@ typedef struct {
   size_t    attr_num;               // Length of attrs in Select clause
   RelAttr   attributes[MAX_NUM];    // attrs in Select clause
   size_t    aggregation_num;
-  AggregationType aggregationType[MAX_NUM];
+  AggAttr   aggregations[MAX_NUM];
   size_t    relation_num;           // Length of relations in From clause
   char *    relations[MAX_NUM];     // relations in From clause
   size_t    condition_num;          // Length of conditions in Where clause
@@ -190,7 +195,6 @@ extern "C" {
 #endif  // __cplusplus
 
 void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const char *attribute_name);
-void set_attr_aggregation(RelAttr *relation_attr, AggregationType* aggregationType);
 void relation_attr_destroy(RelAttr *relation_attr);
 
 void value_init_integer(Value *value, int v);
@@ -205,11 +209,15 @@ void condition_destroy(Condition *condition);
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length);
 void attr_info_destroy(AttrInfo *attr_info);
 
+void aggregation_info_init(AggAttr *agg_info, const char *relation_name, const char *attribute_name,
+                           AggregationType aggregationType);
+void aggregation_info_destroy(AggAttr *aggregation_attr);
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
 void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
-void selects_append_aggregation(Selects *selects, const char *aggregationType);
+void selects_append_aggregation(Selects *selects, AggAttr *agg_attr);
 void selects_destroy(Selects *selects);
 
 void inserts_init(Inserts *inserts, const char *relation_name, Value values[], size_t value_num);

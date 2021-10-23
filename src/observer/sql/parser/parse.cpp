@@ -32,10 +32,6 @@ void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const
   relation_attr->attribute_name = strdup(attribute_name);
 }
 
-void set_attr_aggregation(RelAttr *relation_attr, AggregationType* aggregationType){
-
-}
-
 void relation_attr_destroy(RelAttr *relation_attr) {
   free(relation_attr->relation_name);
   free(relation_attr->attribute_name);
@@ -104,6 +100,25 @@ void attr_info_destroy(AttrInfo *attr_info) {
   attr_info->name = nullptr;
 }
 
+void aggregation_info_init(AggAttr *agg_info, const char *relation_name, const char *attribute_name,
+                           AggregationType aggregationType) {
+  if (relation_name != nullptr) {
+    agg_info->relation_name = strdup(relation_name);
+  } else {
+    agg_info->relation_name = nullptr;
+  }
+  agg_info->attribute_name = strdup(attribute_name);
+  agg_info->aggregationType = aggregationType;
+  LOG_ERROR("agg init %d", aggregationType);
+}
+
+void aggregation_info_destroy(AggAttr *aggregation_info) {
+  free(aggregation_info->relation_name);
+  free(aggregation_info->attribute_name);
+  aggregation_info->relation_name = nullptr;
+  aggregation_info->attribute_name = nullptr;
+}
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
   selects->attributes[selects->attr_num++] = *rel_attr;
@@ -120,10 +135,9 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
   selects->condition_num = condition_num;
 }
 
-void selects_append_aggregation(Selects *selects, const char *aggregationType) {
-  if (0 == strcmp(aggregationType, "max")) {
-    selects->aggregationType[selects->aggregation_num++] = AggregationType::MaxAggregate;
-  }
+void selects_append_aggregation(Selects *selects, AggAttr *agg_attr) {
+  LOG_ERROR("add index %d, what: %d", selects->aggregation_num, (*agg_attr).aggregationType);
+  selects->aggregations[selects->aggregation_num++] = *agg_attr;
 }
 
 void selects_destroy(Selects *selects) {
@@ -131,6 +145,11 @@ void selects_destroy(Selects *selects) {
     relation_attr_destroy(&selects->attributes[i]);
   }
   selects->attr_num = 0;
+
+  for (size_t i = 0; i < selects->aggregation_num; i++) {
+    aggregation_info_destroy(&selects->aggregations[i]);
+  }
+  selects->aggregation_num = 0;
 
   for (size_t i = 0; i < selects->relation_num; i++) {
     free(selects->relations[i]);

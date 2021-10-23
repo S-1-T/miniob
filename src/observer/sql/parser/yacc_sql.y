@@ -20,7 +20,8 @@ typedef struct ParserContext {
   Value values[MAX_NUM];
   Condition conditions[MAX_NUM];
   CompOp comp;
-    char id[MAX_NUM];
+  AggregationType aggregation;
+  char id[MAX_NUM];
 } ParserContext;
 
 //获取子串
@@ -105,6 +106,10 @@ ParserContext *get_context(yyscan_t scanner)
         LE
         GE
         NE
+        MAX
+        MIN
+        COUNT
+        SUM
 
 %union {
   struct _Attr *attr;
@@ -397,11 +402,16 @@ select_attr:
             relation_attr_init(&attr, $1, $3);
             selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
         }
-        |  MAX LBRACE ID RBRACE attr_list {
-        	RelAttr attr;
-                relation_attr_init(&attr, NULL, $3);
-	    	selects_append_aggregation(&CONTEXT->ssql->sstr.selection, $1);
-        }
+        |  aggregation LBRACE ID RBRACE attr_list {
+        	AggAttr attr;
+                aggregation_info_init(&attr, NULL, $3, CONTEXT->aggregation);
+	    	selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
+          }
+	  |  aggregation LBRACE ID DOT ID RBRACE attr_list {
+	      	AggAttr attr;
+                aggregation_info_init(&attr, $3, $5, CONTEXT->aggregation);
+		selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
+	  }
     ;
 attr_list:
     /* empty */
@@ -426,6 +436,16 @@ attr_list:
          // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length].attribute_name=$4;
          // CONTEXT->ssql->sstr.selection.attributes[CONTEXT->select_length++].relation_name=$2;
       }
+    | COMMA aggregation LBRACE ID RBRACE attr_list {
+            AggAttr attr;
+            aggregation_info_init(&attr, NULL, $4, CONTEXT->aggregation);
+    	    selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
+        }
+    | COMMA aggregation LBRACE ID DOT ID RBRACE attr_list {
+	    AggAttr attr;
+	    aggregation_info_init(&attr, $4, $6, CONTEXT->aggregation);
+	    selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
+  	}
       ;
 
 rel_list:
@@ -600,6 +620,13 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+    ;
+
+aggregation:
+	MAX { CONTEXT->aggregation = MaxAggregate; printf("->1<-\n");}
+    | MIN { CONTEXT->aggregation = MinAggregate;  printf("->2<-\n");}
+    | COUNT { CONTEXT->aggregation = CountAggregate;  printf("->3<-\n");}
+    | SUM { CONTEXT->aggregation = SumAggregate;  printf("->4<-\n");}
     ;
 
 load_data:

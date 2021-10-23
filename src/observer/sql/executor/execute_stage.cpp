@@ -134,7 +134,8 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
           do_select(current_db, sql, exe_event->sql_event()->session_event());
       // 出错时返回 FAILURE
       if (rc != RC::SUCCESS) snprintf(response, sizeof(response), "FAILURE\n");
-    } break;
+    }
+      break;
 
     case SCF_INSERT:
     case SCF_UPDATE:
@@ -146,7 +147,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     case SCF_CREATE_INDEX:
     case SCF_DROP_INDEX:
     case SCF_LOAD_DATA: {
-      StorageEvent *storage_event = new (std::nothrow) StorageEvent(exe_event);
+      StorageEvent *storage_event = new(std::nothrow) StorageEvent(exe_event);
       if (storage_event == nullptr) {
         LOG_ERROR("Failed to new StorageEvent");
         event->done_immediate();
@@ -154,27 +155,32 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       }
 
       default_storage_stage_->handle_event(storage_event);
-    } break;
+    }
+      break;
     case SCF_SYNC: {
       RC rc = DefaultHandler::get_default().sync();
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_BEGIN: {
       session_event->get_client()->session->set_trx_multi_operation_mode(true);
       snprintf(response, sizeof(response), "%s\n", strrc(RC::SUCCESS));
-    } break;
+    }
+      break;
     case SCF_COMMIT: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->commit();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_ROLLBACK: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->rollback();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_HELP: {
       snprintf(response, sizeof(response),
                "show tables;\n"
@@ -187,11 +193,13 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
                "update `table` set column=value [where `column`=`value`];\n"
                "delete from `table` [where `column`=`value`];\n"
                "select [ * | `columns` ] from `table`;\n");
-    } break;
+    }
+      break;
     case SCF_EXIT: {
       // do nothing
       snprintf(response, sizeof(response), "Unsupported\n");
-    } break;
+    }
+      break;
     default: {
       LOG_ERROR("Unsupported command=%d\n", sql->flag);
     }
@@ -377,18 +385,17 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     LOG_ERROR("Selection meta test failed");
     return rc;
   }
+
+  for (size_t i = 0; i<selects.aggregation_num; i++) {
+    LOG_ERROR("%d", selects.aggregations[i].aggregationType);
+  }
+
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
     const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
-    Table * table = DefaultHandler::get_default().find_table(db, table_name);
-    if (nullptr == table) {
-      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-    tables[i] = table;
-    rc = create_selection_executor(trx, selects, table, *select_node);
+    rc = create_selection_executor(trx, selects, tables[i], *select_node);
     if (rc != RC::SUCCESS) {
       delete select_node;
       for (SelectExeNode *&tmp_node: select_nodes) {
@@ -580,17 +587,7 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
           return rc;
         }
       }
-    } else {
-      // TODO: 类型检查
-      aggregationInfos.at(attr.aggregationType).add_field(table->table_meta().field(attr.attribute_name)->type(),
-                attr.relation_name, attr.attribute_name);
-      schema_add_field(table, attr.attribute_name, schema);
     }
-  }
-
-  // TODO: std::move优化
-  for (int i = 0; i < selects.aggregation_num; i++) {
-    select_node.add_aggregation(aggregationInfos.at((const AggregationType *const) selects.aggregationType[i]));
   }
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
