@@ -20,7 +20,6 @@ typedef struct ParserContext {
   Value values[MAX_NUM];
   Condition conditions[MAX_NUM];
   CompOp comp;
-  AggregationType aggregation;
   char id[MAX_NUM];
 } ParserContext;
 
@@ -128,6 +127,7 @@ ParserContext *get_context(yyscan_t scanner)
 %token <string> SSS
 %token <string> STAR
 %token <string> STRING_V
+%token <AggregationType> aggregation
 //非终结符
 
 %type <number> type;
@@ -404,12 +404,13 @@ select_attr:
         }
         |  aggregation LBRACE ID RBRACE attr_list {
         	AggAttr attr;
-                aggregation_info_init(&attr, NULL, $3, CONTEXT->aggregation);
+                aggregation_info_init(&attr, NULL, $3, $1);
+                printf("%s******\n", $3);
 	    	selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
           }
 	  |  aggregation LBRACE ID DOT ID RBRACE attr_list {
 	      	AggAttr attr;
-                aggregation_info_init(&attr, $3, $5, CONTEXT->aggregation);
+                aggregation_info_init(&attr, $3, $5, $1);
 		selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
 	  }
     ;
@@ -438,12 +439,13 @@ attr_list:
       }
     | COMMA aggregation LBRACE ID RBRACE attr_list {
             AggAttr attr;
-            aggregation_info_init(&attr, NULL, $4, CONTEXT->aggregation);
+            aggregation_info_init(&attr, NULL, $4, $2);
+            printf("%s******\n", $4);
     	    selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
         }
     | COMMA aggregation LBRACE ID DOT ID RBRACE attr_list {
 	    AggAttr attr;
-	    aggregation_info_init(&attr, $4, $6, CONTEXT->aggregation);
+	    aggregation_info_init(&attr, $4, $6, $2);
 	    selects_append_aggregation(&CONTEXT->ssql->sstr.selection, &attr);
   	}
       ;
