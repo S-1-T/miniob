@@ -154,8 +154,80 @@ TupleSet &TupleSet::operator=(TupleSet &&other) {
   return *this;
 }
 
-void TupleSet::add(Tuple &&tuple) {
-  tuples_.emplace_back(std::move(tuple));
+void TupleSet::merge(Tuple &&tuple, std::vector<AggregationType> aggregation_types) {
+  // 在未实现 GROUP BY 语句之前，只要存在 None 的 aggregation_type，就说明是一个无聚合的查询
+  if (aggregation_types[0] == None) {
+    tuples_.emplace_back(std::move(tuple));
+    return;
+  }
+  Tuple new_tuple;
+  int value_idx = 0;
+  const std::vector<std::shared_ptr<TupleValue>> new_values = tuple.values();
+  // 第一次计算，首先进行初始化
+  if (tuples_.empty()) {
+    for (std::shared_ptr<TupleValue> new_value: new_values) {
+      int cur_value_idx = value_idx++;
+      AggregationType aggregation_type = aggregation_types[cur_value_idx];
+      switch (aggregation_type) {
+      case CountAggregate: {
+          int count = 1;
+          new_tuple.add(count);
+      }
+      break;
+      case SumAggregate:
+      case MinAggregate:
+      case MaxAggregate: {
+          new_tuple.add(new_value);
+      }
+      break;
+      default: {
+        LOG_PANIC("Unsupported aggregation type. type=%d", aggregation_type);
+      }
+      }
+    }
+    tuples_.emplace_back(std::move(new_tuple));
+    return;
+  }
+  // 聚合函数的 Merge 计算
+  for (std::shared_ptr<TupleValue> new_value: new_values) {
+    int cur_value_idx = value_idx++;
+    // 聚合运算的每一个阶段，tuples_ 都只含有一个 Tuple
+    const std::shared_ptr<TupleValue> old_value = tuples_[0].get_pointer(cur_value_idx);
+    AggregationType aggregation_type = aggregation_types[cur_value_idx];
+    switch (aggregation_type) {
+    case CountAggregate: {
+      old_value.get()->add(IntValue(1));
+      new_tuple.add(old_value);
+    }
+    break;
+    case SumAggregate: {
+      old_value.get()->add(*new_value.get());
+      new_tuple.add(old_value);
+    }
+    break;
+    case MinAggregate: {
+      if (new_value.get()->compare(*old_value.get()) < 0) {
+        new_tuple.add(new_value);
+      }
+    }
+    break;
+    case MaxAggregate: {
+      if (new_value.get()->compare(*old_value.get()) > 0) {
+        new_tuple.add(new_value);
+      }
+    }
+    break;
+    default: {
+      LOG_PANIC("Unsupported aggregation type. type=%d", aggregation_type);
+    }
+    }
+  }
+  // 判断是否需要存入新的 Merge 计算结果
+  if (new_tuple.size() != 0) {
+    tuples_.pop_back();
+    tuples_.emplace_back(std::move(new_tuple));
+  }
+  return;
 }
 
 void TupleSet::clear() {
@@ -208,8 +280,8 @@ const std::vector<Tuple> &TupleSet::tuples() const {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set) :
-      table_(table), tuple_set_(tuple_set){
+TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set, std::vector<AggregationType> *aggregation_types) :
+  table_(table), tuple_set_(tuple_set), aggregation_types_(aggregation_types) {
 }
 
 void TupleRecordConverter::add_record(const char *record) {
@@ -246,46 +318,5 @@ void TupleRecordConverter::add_record(const char *record) {
     }
   }
 
-  tuple_set_.add(std::move(tuple));
-}
-
-
-TupleRecordAggregation::TupleRecordAggregation(Table *table, TupleSet &tuple_set):
-    table_(table), tuple_set_(tuple_set) {
-}
-
-void TupleRecordAggregation::add_aggregation(AggregationInfo aggregationInfo) {
-  aggregations.emplace_back(aggregationInfo);
-}
-
-void TupleRecordAggregation::generateInitialAggregateValue() {
-  Tuple tuple;
-
-  // TODO: 需要一种更优雅的方式获取最大最小值
-  for (const auto &agg_info : aggregations) {
-    switch (agg_info.aggregationType_) {
-      case AggregationType::CountAggregate:
-        // Count starts at zero.
-        tuple.add(0);
-        break;
-      case AggregationType::SumAggregate:
-        // Sum starts at zero.
-        tuple.add(0);
-        break;
-      case AggregationType::MinAggregate:
-        // Min starts at INT_MAX.
-        tuple.add(999);
-        break;
-      case AggregationType::MaxAggregate:
-        // Max starts at INT_MIN.
-        tuple.add(-999);
-        break;
-    }
-  }
-
-  tuple_set_.add(std::move(tuple));
-}
-
-void TupleRecordAggregation::CombineAggregateValues(const char *record) {
-
+  tuple_set_.merge(std::move(tuple), *aggregation_types_);
 }

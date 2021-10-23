@@ -35,18 +35,14 @@ public:
   SelectExeNode();
   virtual ~SelectExeNode();
 
-  RC init(Trx *trx, Table *table, TupleSchema && tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters);
+  RC init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, std::vector<AggregationType> &&aggregation_types);
 
   RC execute(TupleSet &tuple_set) override;
-
-  void set_aggregation(bool state) {isAggregation_ = state;}
-  void add_aggregation(AggregationInfo info) { aggregationInfos_.emplace_back(info);}
 private:
   Trx *trx_ = nullptr;
   Table  * table_;
   TupleSchema  tuple_schema_;
-  bool isAggregation_;
-  std::vector<AggregationInfo> aggregationInfos_;
+  std::vector<AggregationType> aggregation_types_;
   std::vector<DefaultConditionFilter *> condition_filters_;
 };
 

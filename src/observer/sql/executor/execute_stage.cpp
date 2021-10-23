@@ -557,6 +557,7 @@ bool match_table(const Selects &selects, const char *table_name_in_condition, co
   return selects.relation_num == 1;
 }
 
+
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
 RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
@@ -569,9 +570,11 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
     aggregationInfos.insert(std::make_pair(&selects.aggregationType[i], AggregationInfo(selects.aggregationType[i])));
   }
 
+  std::vector<AggregationType> aggregation_types;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
+      // TODO: 处理聚合函数中 max(*) 的特殊情况
       if (0 == strcmp("*", attr.attribute_name)) {
         // 列出这张表所有字段
         TupleSchema::from_table(table, schema);
@@ -582,6 +585,7 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
         if (match_table(selects, attr.relation_name, table_name) && rc != RC::SUCCESS) {
           return rc;
         }
+        aggregation_types.push_back(attr.aggregation_type);
       }
     }
   }
@@ -613,5 +617,5 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
     }
   }
 
-  return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
+  return select_node.init(trx, table, std::move(schema), std::move(condition_filters), std::move(aggregation_types));
 }

@@ -30,6 +30,16 @@ void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const
     relation_attr->relation_name = nullptr;
   }
   relation_attr->attribute_name = strdup(attribute_name);
+  relation_attr->aggregation_type = AggregationType::None;
+}
+void relation_attr_init_with_aggregation(RelAttr *relation_attr, const char *relation_name, const char *attribute_name, AggregationType aggregation_type) {
+  if (relation_name != nullptr) {
+    relation_attr->relation_name = strdup(relation_name);
+  } else {
+    relation_attr->relation_name = nullptr;
+  }
+  relation_attr->attribute_name = strdup(attribute_name);
+  relation_attr->aggregation_type = aggregation_type;
 }
 
 void relation_attr_destroy(RelAttr *relation_attr) {
@@ -37,6 +47,7 @@ void relation_attr_destroy(RelAttr *relation_attr) {
   free(relation_attr->attribute_name);
   relation_attr->relation_name = nullptr;
   relation_attr->attribute_name = nullptr;
+  relation_attr->aggregation_type = AggregationType::None;
 }
 
 void value_init_integer(Value *value, int v) {
@@ -100,24 +111,6 @@ void attr_info_destroy(AttrInfo *attr_info) {
   attr_info->name = nullptr;
 }
 
-void aggregation_info_init(AggAttr *agg_info, const char *relation_name, const char *attribute_name,
-                           AggregationType aggregationType) {
-  if (relation_name != nullptr) {
-    agg_info->relation_name = strdup(relation_name);
-  } else {
-    agg_info->relation_name = nullptr;
-  }
-  agg_info->attribute_name = strdup(attribute_name);
-  agg_info->aggregationType = aggregationType;
-}
-
-void aggregation_info_destroy(AggAttr *aggregation_info) {
-  free(aggregation_info->relation_name);
-  free(aggregation_info->attribute_name);
-  aggregation_info->relation_name = nullptr;
-  aggregation_info->attribute_name = nullptr;
-}
-
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
   selects->attributes[selects->attr_num++] = *rel_attr;
@@ -134,20 +127,11 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
   selects->condition_num = condition_num;
 }
 
-void selects_append_aggregation(Selects *selects, AggAttr *agg_attr) {
-  selects->aggregations[selects->aggregation_num++] = *agg_attr;
-}
-
 void selects_destroy(Selects *selects) {
   for (size_t i = 0; i < selects->attr_num; i++) {
     relation_attr_destroy(&selects->attributes[i]);
   }
   selects->attr_num = 0;
-
-  for (size_t i = 0; i < selects->aggregation_num; i++) {
-    aggregation_info_destroy(&selects->aggregations[i]);
-  }
-  selects->aggregation_num = 0;
 
   for (size_t i = 0; i < selects->relation_num; i++) {
     free(selects->relations[i]);

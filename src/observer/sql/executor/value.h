@@ -22,12 +22,15 @@ See the Mulan PSL v2 for more details. */
 #include <ctime>
 #include <cstdio>
 
+#include "common/log/log.h"
+
 class TupleValue {
 public:
   TupleValue() = default;
   virtual ~TupleValue() = default;
 
   virtual void to_string(std::ostream &os) const = 0;
+  virtual void add(const TupleValue &other) = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool compare_with_op(const TupleValue &other, CompOp comp) const {
     auto cmp_result = compare(other);
@@ -60,6 +63,11 @@ public:
 
   void to_string(std::ostream &os) const override {
     os << value_;
+  }
+
+  void add(const TupleValue &other) override {
+    const IntValue & int_other = (const IntValue &)other;
+    value_ = value_ + int_other.value_;
   }
 
   int compare(const TupleValue &other) const override {
@@ -98,6 +106,11 @@ public:
     os << output;
   }
 
+  void add(const TupleValue &other) override {
+    const FloatValue & float_other = (const FloatValue &)other;
+    value_ = value_ + float_other.value_;
+  }
+
   int compare(const TupleValue &other) const override {
     const FloatValue & float_other = (const FloatValue &)other;
     float result = value_ - float_other.value_;
@@ -129,6 +142,10 @@ public:
     os << buffer;
   }
 
+  void add(const TupleValue &other) override {
+    LOG_PANIC("Unsupported add type. type=%d", DATES);
+  }
+
   int compare(const TupleValue &other) const override {
     const DateValue & date_other = (const DateValue &)other;
     double diff_seconds = difftime(value_, date_other.value_);
@@ -157,6 +174,10 @@ public:
 
   void to_string(std::ostream &os) const override {
     os << value_;
+  }
+
+  void add(const TupleValue &other) override {
+    LOG_PANIC("Unsupported add type. type=%d", CHARS);
   }
 
   int compare(const TupleValue &other) const override {

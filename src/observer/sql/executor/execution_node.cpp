@@ -26,12 +26,12 @@ SelectExeNode::~SelectExeNode() {
   condition_filters_.clear();
 }
 
-RC
-SelectExeNode::init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters) {
+RC SelectExeNode::init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, std::vector<AggregationType> &&aggregation_types) {
   trx_ = trx;
   table_ = table;
   tuple_schema_ = tuple_schema;
   condition_filters_ = std::move(condition_filters);
+  aggregation_types_ = std::move(aggregation_types);
   return RC::SUCCESS;
 }
 
@@ -40,33 +40,13 @@ void record_reader(const char *data, void *context) {
   converter->add_record(data);
 }
 
-void aggregation_reader(const char *data, void *context) {
-  TupleRecordAggregation *converter = (TupleRecordAggregation *)context;
-  converter->CombineAggregateValues(data);
-}
-
 RC SelectExeNode::execute(TupleSet &tuple_set) {
   CompositeConditionFilter condition_filter;
   condition_filter.init((const ConditionFilter **)condition_filters_.data(), condition_filters_.size());
-
-  RC rc = RC::SUCCESS;
+  
   tuple_set.clear();
   tuple_set.set_schema(tuple_schema_);
 
-//  if (isAggregation_) {
-//    TupleRecordAggregation converter(table_, tuple_set);
-//
-//    // TODO:: 需要 add_aggregation and initialize, std::move ??
-//    for (int i = 0; i< aggregationInfos_.size(); i++) {
-//      converter.add_aggregation(aggregationInfos_[i]);
-//    }
-//    converter.generateInitialAggregateValue();
-//
-//    rc = table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, aggregation_reader);
-//  } else {
-    TupleRecordConverter converter(table_, tuple_set);
-    rc = table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, record_reader);
-//  }
-
-  return rc;
+  TupleRecordConverter converter(table_, tuple_set, &aggregation_types_);
+  return table_->scan_record(trx_, &condition_filter, -1, (void *) &converter, record_reader);
 }
