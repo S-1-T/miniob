@@ -51,7 +51,7 @@ ExecuteStage::~ExecuteStage() {}
 
 //! Parse properties, instantiate a stage object
 Stage *ExecuteStage::make_stage(const std::string &tag) {
-  ExecuteStage *stage = new (std::nothrow) ExecuteStage(tag.c_str());
+  ExecuteStage *stage = new(std::nothrow) ExecuteStage(tag.c_str());
   if (stage == nullptr) {
     LOG_ERROR("new ExecuteStage failed");
     return nullptr;
@@ -119,7 +119,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   Query *sql = exe_event->sqls();
   const char *current_db = session_event->get_client()->session->get_current_db().c_str();
 
-  CompletionCallback *cb = new (std::nothrow) CompletionCallback(this, nullptr);
+  CompletionCallback *cb = new(std::nothrow) CompletionCallback(this, nullptr);
   if (cb == nullptr) {
     LOG_ERROR("Failed to new callback for ExecutionPlanEvent");
     exe_event->done_immediate();
@@ -391,7 +391,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     rc = create_selection_executor(trx, selects, table, *select_node);
     if (rc != RC::SUCCESS) {
       delete select_node;
-      for (SelectExeNode *& tmp_node: select_nodes) {
+      for (SelectExeNode *&tmp_node: select_nodes) {
         delete tmp_node;
       }
       end_trx_if_need(session, trx, false);
@@ -410,7 +410,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     TupleSet tuple_set;
     rc = node->execute(tuple_set);
     if (rc != RC::SUCCESS) {
-      for (SelectExeNode *& tmp_node: select_nodes) {
+      for (SelectExeNode *&tmp_node: select_nodes) {
         delete tmp_node;
       }
       end_trx_if_need(session, trx, false);
@@ -446,7 +446,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     tuple_sets.front().print(ss, false);
   }
 
-  for (SelectExeNode *& tmp_node: select_nodes) {
+  for (SelectExeNode *&tmp_node: select_nodes) {
     delete tmp_node;
   }
   session_event->set_response(ss.str());
@@ -559,6 +559,13 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   const char *table_name = table->name();
+  select_node.set_aggregation(selects.aggregation_num == 0);
+
+  std::unordered_map<const AggregationType*, AggregationInfo> aggregationInfos;
+  for (int i = 0; i < selects.aggregation_num; i++) {
+    aggregationInfos.insert(std::make_pair(&selects.aggregationType[i], AggregationInfo(selects.aggregationType[i])));
+  }
+
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
@@ -573,8 +580,19 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
           return rc;
         }
       }
+    } else {
+      // TODO: 类型检查
+      aggregationInfos.at(attr.aggregationType).add_field(table->table_meta().field(attr.attribute_name)->type(),
+                attr.relation_name, attr.attribute_name);
+      schema_add_field(table, attr.attribute_name, schema);
     }
   }
+
+  // TODO: std::move优化
+  for (int i = 0; i < selects.aggregation_num; i++) {
+    select_node.add_aggregation(aggregationInfos.at((const AggregationType *const) selects.aggregationType[i]));
+  }
+
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {

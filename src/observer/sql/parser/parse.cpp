@@ -32,6 +32,10 @@ void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const
   relation_attr->attribute_name = strdup(attribute_name);
 }
 
+void set_attr_aggregation(RelAttr *relation_attr, AggregationType* aggregationType){
+
+}
+
 void relation_attr_destroy(RelAttr *relation_attr) {
   free(relation_attr->relation_name);
   free(relation_attr->attribute_name);
@@ -114,6 +118,12 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
     selects->conditions[i] = conditions[i];
   }
   selects->condition_num = condition_num;
+}
+
+void selects_append_aggregation(Selects *selects, const char *aggregationType) {
+  if (0 == strcmp(aggregationType, "max")) {
+    selects->aggregationType[selects->aggregation_num++] = AggregationType::MaxAggregate;
+  }
 }
 
 void selects_destroy(Selects *selects) {

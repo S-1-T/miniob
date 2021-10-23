@@ -250,3 +250,42 @@ void TupleRecordConverter::add_record(const char *record) {
 }
 
 
+TupleRecordAggregation::TupleRecordAggregation(Table *table, TupleSet &tuple_set):
+    table_(table), tuple_set_(tuple_set) {
+}
+
+void TupleRecordAggregation::add_aggregation(AggregationInfo aggregationInfo) {
+  aggregations.emplace_back(aggregationInfo);
+}
+
+void TupleRecordAggregation::generateInitialAggregateValue() {
+  Tuple tuple;
+
+  // TODO: 需要一种更优雅的方式获取最大最小值
+  for (const auto &agg_info : aggregations) {
+    switch (agg_info.aggregationType_) {
+      case AggregationType::CountAggregate:
+        // Count starts at zero.
+        tuple.add(0);
+        break;
+      case AggregationType::SumAggregate:
+        // Sum starts at zero.
+        tuple.add(0);
+        break;
+      case AggregationType::MinAggregate:
+        // Min starts at INT_MAX.
+        tuple.add(999);
+        break;
+      case AggregationType::MaxAggregate:
+        // Max starts at INT_MIN.
+        tuple.add(-999);
+        break;
+    }
+  }
+
+  tuple_set_.add(std::move(tuple));
+}
+
+void TupleRecordAggregation::CombineAggregateValues(const char *record) {
+
+}

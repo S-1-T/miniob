@@ -158,4 +158,36 @@ private:
   TupleSet &tuple_set_;
 };
 
+struct AggregationInfo {
+  AggregationType aggregationType_;
+  TupleSchema schema_;
+
+  AggregationInfo(AggregationType aggregationType) {
+    aggregationType_ = aggregationType;
+  }
+
+  void add_field(AttrType type, const char *table_name, const char *field_name) {
+    schema_.add(type, table_name, field_name);
+  }
+};
+
+class TupleRecordAggregation {
+public:
+  TupleRecordAggregation(Table *table, TupleSet &tuple_set_);
+
+  void add_aggregation(AggregationInfo);
+
+  void generateInitialAggregateValue();
+
+  void CombineAggregateValues(const char *record);
+
+private:
+  void add_record(const char *record);
+
+private:
+  Table *table_;
+  TupleSet &tuple_set_;
+  std::vector<AggregationInfo> aggregations;
+};
+
 #endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

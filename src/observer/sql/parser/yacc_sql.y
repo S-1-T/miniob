@@ -397,6 +397,11 @@ select_attr:
             relation_attr_init(&attr, $1, $3);
             selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
         }
+        |  MAX LBRACE ID RBRACE attr_list {
+        	RelAttr attr;
+                relation_attr_init(&attr, NULL, $3);
+	    	selects_append_aggregation(&CONTEXT->ssql->sstr.selection, $1);
+        }
     ;
 attr_list:
     /* empty */
