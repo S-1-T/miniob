@@ -206,15 +206,17 @@ void TupleSet::merge(Tuple &&tuple, std::vector<AggregationType> aggregation_typ
     }
     break;
     case MinAggregate: {
-      if (new_value.get()->compare(*old_value.get()) < 0) {
+      if (new_value.get()->compare(*old_value.get()) < 0)
         new_tuple.add(new_value);
-      }
+      else
+        new_tuple.add(old_value);
     }
     break;
     case MaxAggregate: {
-      if (new_value.get()->compare(*old_value.get()) > 0) {
+      if (new_value.get()->compare(*old_value.get()) > 0)
         new_tuple.add(new_value);
-      }
+      else
+        new_tuple.add(old_value);
     }
     break;
     default: {
