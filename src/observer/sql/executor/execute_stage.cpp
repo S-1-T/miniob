@@ -221,6 +221,29 @@ static RC schema_add_field(Table *table, const char *field_name, TupleSchema &sc
   return RC::SUCCESS;
 }
 
+// 检查二义性，并得到正确时的表 index
+RC check_ambiguous(size_t relation_num, Table **tables, const char *attribute_name, size_t &idx) {
+  bool find = false;
+  for (size_t j = 0; j < relation_num; j++) {
+    auto f = tables[j]->table_meta().field(attribute_name);
+    if (f != nullptr) {
+      if (!find) {
+        find = true;
+        idx = j;
+      } else {
+        LOG_WARN("Column [%s] in field list is ambiguous", attribute_name);
+        return RC::SCHEMA_FIELD_EXIST;
+      }
+    }
+  }
+  // 没有表有此字段
+  if (!find) {
+    LOG_WARN("No table has field [%s]", attribute_name);
+    return RC::SCHEMA_FIELD_NOT_EXIST;
+  }
+  return RC::SUCCESS;
+}
+
 // 统一进行 meta 检测, 返回找到的 tables
 // 并为多表构造输出的 schema
 RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema) {
@@ -236,26 +259,45 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
   }
   // 检测 attr 中的 table 是否存在于要查找的 tables 中
   // 以及 attr 是否存在于此 table 的 fields 中
-  for (size_t i = 0; i < selects.attr_num; i++) {
+  // 并为多表查询构造 output_schema
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (attr.relation_name != nullptr) {
-      bool find = false;
-      size_t table_idx = 0;
-      for (table_idx = 0; table_idx < selects.relation_num; table_idx++) {
-        if (0 == strcmp(attr.relation_name, selects.relations[table_idx])) {
-          find = true;
+      Table *t = nullptr;
+      for (size_t j = 0; j < selects.relation_num; j++) {
+        if (0 == strcmp(attr.relation_name, selects.relations[j])) {
+          t = tables[j];
           break;
         }
       }
-      if (!find) {
+      if (t == nullptr) {
         LOG_WARN("Table [%s] is not in selection's relations", attr.relation_name);
         return RC::MISMATCH;
       }
-      if (0 != strcmp("*", attr.attribute_name) &&
-        nullptr == tables[table_idx]->table_meta().field(attr.attribute_name)) {
+      if (0 == strcmp("*", attr.attribute_name)) {
+        TupleSchema temp;
+        TupleSchema::from_table(t, temp);
+        output_schema.append(temp);
+      } else if (nullptr == t->table_meta().field(attr.attribute_name)) {
         LOG_WARN("No such field [%s] in table [%s]", attr.attribute_name, attr.relation_name);
         return RC::SCHEMA_FIELD_NOT_EXIST;
+      } else {
+        schema_add_field(t, attr.attribute_name, output_schema);
       }
+    } else if (0 == strcmp("*", attr.attribute_name)) {
+      for (int j = selects.relation_num - 1; j >= 0; j--) {
+        TupleSchema temp;
+        TupleSchema::from_table(tables[j], temp);
+        output_schema.append(temp);
+      }
+    } else {
+      // 检测二义性
+      size_t idx = 0;
+      RC rc = check_ambiguous(selects.relation_num, tables, attr.attribute_name, idx);
+      if (RC::SUCCESS != rc) {
+        return rc;
+      }
+      schema_add_field(tables[idx], attr.attribute_name, output_schema);
     }
   }
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
@@ -264,6 +306,8 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
     const Condition &condition = selects.conditions[i];
     const char *left_table_name = condition.left_attr.relation_name;
     const char *right_table_name = condition.right_attr.relation_name;
+    const char *left_attr_name = condition.left_attr.attribute_name;
+    const char *right_attr_name = condition.right_attr.attribute_name;
     bool left_is_attr = condition.left_is_attr;
     bool right_is_attr = condition.right_is_attr;
     bool left_find = false;
@@ -271,15 +315,29 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
     size_t left_table_idx = 0;
     size_t right_table_idx = 0;
     for (size_t j = 0; j < selects.relation_num; j++) {
-      if (left_is_attr && left_table_name != nullptr &&
-        0 == strcmp(left_table_name, selects.relations[j])) {
-        left_find = true;
-        left_table_idx = j;
+      if (left_is_attr) {
+        if (left_table_name != nullptr && 0 == strcmp(left_table_name, selects.relations[j])) {
+          left_find = true;
+          left_table_idx = j;
+        } else if (left_table_name == nullptr) {
+          size_t idx = 0;
+          RC rc = check_ambiguous(selects.relation_num, tables, left_attr_name, idx);
+          if (RC::SUCCESS != rc) {
+            return rc;
+          }
+        }
       }
-      if (right_is_attr && right_table_name != nullptr &&
-        0 == strcmp(right_table_name, selects.relations[j])) {
-        right_find = true;
-        right_table_idx = j;
+      if (right_is_attr) {
+        if (right_table_name != nullptr && 0 == strcmp(right_table_name, selects.relations[j])) {
+          right_find = true;
+          right_table_idx = j;
+        } else if (right_table_name == nullptr) {
+          size_t idx = 0;
+          RC rc = check_ambiguous(selects.relation_num, tables, right_attr_name, idx);
+          if (RC::SUCCESS != rc) {
+            return rc;
+          }
+        }
       }
     }
     if (left_is_attr && left_table_name != nullptr && !left_find) {
@@ -290,8 +348,6 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       LOG_WARN("right attr's relation [%s] will not be scanned", right_table_name);
       return RC::MISMATCH;
     }
-    const char *left_attr_name = condition.left_attr.attribute_name;
-    const char *right_attr_name = condition.right_attr.attribute_name;
     if (left_is_attr && left_table_name != nullptr &&
       nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
       LOG_WARN("left attr [%s] is not exist in [%s]", left_attr_name, left_table_name);
@@ -301,50 +357,6 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
         nullptr == tables[right_table_idx]->table_meta().field(right_attr_name)) {
       LOG_WARN("right attr [%s] is not exist in [%s]", right_attr_name, right_table_name);
       return RC::SCHEMA_FIELD_NOT_EXIST;
-    }
-  }
-  // 为多表查询构造 output_schema
-  for (int i = selects.attr_num - 1; i >= 0; i--) {
-    const RelAttr &attr = selects.attributes[i];
-    if (nullptr != attr.relation_name) {
-      Table *t = nullptr;
-      for (int j = 0; j < selects.relation_num; j++) {
-        if (0 == strcmp(attr.relation_name, tables[j]->name())) {
-          t = tables[j];
-          break;
-        }
-      }
-      if (t == nullptr) {
-        return RC::MISMATCH;
-      }
-      if (0 == strcmp("*", attr.attribute_name)) {
-        TupleSchema temp;
-        TupleSchema::from_table(t, temp);
-        output_schema.append(temp);
-      } else {
-        schema_add_field(t, attr.attribute_name, output_schema);
-      }
-    } else if (0 == strcmp("*", attr.attribute_name)){
-      for (int j = selects.relation_num - 1; j >= 0; j--) {
-        TupleSchema temp;
-        TupleSchema::from_table(tables[j], temp);
-        output_schema.append(temp);
-      }
-    } else {
-      // 检测二义性
-      bool find = false;
-      for (size_t j = 0; j < selects.relation_num; j++) {
-        auto f = tables[j]->table_meta().field(attr.attribute_name);
-        if (f != nullptr) {
-          if (!find) {
-            find = true;
-            schema_add_field(tables[j], attr.attribute_name, output_schema);
-          } else {
-            LOG_WARN("Column [%s] in field list is ambiguous", attr.attribute_name);
-            return RC::SCHEMA_FIELD_EXIST;
-          }
-        }
-      }
     }
   }
   return RC::SUCCESS;
