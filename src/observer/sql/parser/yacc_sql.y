@@ -105,10 +105,11 @@ ParserContext *get_context(yyscan_t scanner)
         LE
         GE
         NE
-        MAX
-        MIN
         COUNT
         SUM
+        AVG
+        MAX
+        MIN
 
 %union {
   struct _Attr *attr;
@@ -404,6 +405,7 @@ select_attr:
     }
     | aggregation LBRACE ID RBRACE attr_list {
         RelAttr attr;
+        // TODO: 更完善地支持 COUNT(expression) 聚合函数（ALL 和 DISTINCT）
         relation_attr_init_with_aggregation(&attr, NULL, $3, $1);
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
@@ -624,10 +626,11 @@ comOp:
     ;
 
 aggregation:
-	MAX { $$ = MaxAggregate; }
-    | MIN { $$ = MinAggregate; }
-    | COUNT { $$ = CountAggregate; }
+    COUNT { $$ = CountAggregate; }
     | SUM { $$ = SumAggregate; }
+    | AVG { $$ = AvgAggregate; }
+    | MAX { $$ = MaxAggregate; }
+    | MIN { $$ = MinAggregate; }
     ;
 
 load_data:

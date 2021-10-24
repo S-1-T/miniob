@@ -43,6 +43,8 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
 
 RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions, std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index);
 
+static RC schema_add_field(Table *table, const char *field_name, AggregationType aggregation_type, TupleSchema &schema);
+
 //! Constructor
 ExecuteStage::ExecuteStage(const char *tag) : Stage(tag) {}
 
@@ -216,19 +218,6 @@ void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
       trx->rollback();
     }
   }
-}
-
-static RC schema_add_field(Table *table, const char *field_name, AggregationType aggregation_type, TupleSchema &schema) {
-  const FieldMeta *field_meta = table->table_meta().field(field_name);
-  if (nullptr == field_meta) {
-    LOG_WARN("No such field. %s.%s", table->name(), field_name);
-    return RC::SCHEMA_FIELD_MISSING;
-  }
-  if (aggregation_type == None)
-    schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
-  else
-    schema.add(field_meta->type(), table->name(), field_meta->name());
-  return RC::SUCCESS;
 }
 
 // 检查二义性，并得到正确时的表 index
@@ -559,6 +548,19 @@ bool match_table(const Selects &selects, const char *table_name_in_condition, co
   return selects.relation_num == 1;
 }
 
+static RC schema_add_field(Table *table, const char *field_name, AggregationType aggregation_type, TupleSchema &schema) {
+  const FieldMeta *field_meta = table->table_meta().field(field_name);
+  if (nullptr == field_meta) {
+    LOG_WARN("No such field. %s.%s", table->name(), field_name);
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+  if (aggregation_type == None)
+    schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
+  else
+    schema.add(field_meta->type(), table->name(), field_meta->name(), aggregation_type);
+  return RC::SUCCESS;
+}
+
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
 RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
@@ -570,13 +572,23 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
   for (int i = 0; i < selects.aggregation_num; i++) {
     aggregationInfos.insert(std::make_pair(&selects.aggregationType[i], AggregationInfo(selects.aggregationType[i])));
   }
-
-  std::vector<AggregationType> aggregation_types;
+  // TODO: GROUP BY 支持
+  bool has_aggregation = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
+    if (attr.aggregation_type != None)
+      has_aggregation = true;
+  }
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    if (attr.aggregation_type == None && has_aggregation)
+      return RC::SCHEMA_FIELD_NAME_ILLEGAL;
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
-      // TODO: 处理聚合函数中 max(*) 的特殊情况
       if (0 == strcmp("*", attr.attribute_name)) {
+        // TODO: 处理聚合函数诸如 count(*)/count(1) 的特殊情况
+        if (attr.aggregation_type != None) {
+          return RC::SCHEMA_FIELD_NAME_ILLEGAL;
+        }
         // 列出这张表所有字段
         TupleSchema::from_table(table, schema);
         break; // 没有校验，给出* 之后，再写字段的错误
@@ -586,7 +598,6 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
         if (match_table(selects, attr.relation_name, table_name) && rc != RC::SUCCESS) {
           return rc;
         }
-        aggregation_types.push_back(attr.aggregation_type);
       }
     }
   }
@@ -618,5 +629,5 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
     }
   }
 
-  return select_node.init(trx, table, std::move(schema), std::move(condition_filters), std::move(aggregation_types));
+  return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }

@@ -18,110 +18,102 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <vector>
 
-#include "sql/parser/parse.h"
 #include "sql/executor/value.h"
 
 class Table;
 
 class Tuple {
-public:
+ public:
   Tuple() = default;
 
   Tuple(const Tuple &other);
 
   ~Tuple();
 
-  Tuple(Tuple &&other) noexcept ;
-  Tuple & operator=(Tuple &&other) noexcept ;
+  Tuple(Tuple &&other) noexcept;
+  Tuple &operator=(Tuple &&other) noexcept;
 
   void add(TupleValue *value);
   void add(const std::shared_ptr<TupleValue> &other);
-  void add(int value);
-  void add(float value);
-  void add(time_t value);
-  void add(const char *s, int len);
+  void add(int value, AggregationType aggregation_type);
+  void add(float value, AggregationType aggregation_type);
+  void add(time_t value, AggregationType aggregation_type);
+  void add(const char *s, int len, AggregationType aggregation_type);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;
   }
 
-  int size() const {
-    return values_.size();
-  }
+  int size() const { return values_.size(); }
 
-  const TupleValue &get(int index) const {
-    return *values_[index];
-  }
+  const TupleValue &get(int index) const { return *values_[index]; }
 
   const std::shared_ptr<TupleValue> &get_pointer(int index) const {
     return values_[index];
   }
 
-private:
-  std::vector<std::shared_ptr<TupleValue>>  values_;
+ private:
+  std::vector<std::shared_ptr<TupleValue>> values_;
 };
 
 class TupleField {
-public:
-  TupleField(AttrType type, const char *table_name, const char *field_name) :
-          type_(type), table_name_(table_name), field_name_(field_name){
-  }
+ public:
+  TupleField(AttrType type, const char *table_name, const char *field_name,
+             const AggregationType aggregation_type)
+      : type_(type),
+        table_name_(table_name),
+        field_name_(field_name),
+        aggregation_type_(aggregation_type) {}
 
-  AttrType  type() const{
-    return type_;
-  }
+  AttrType type() const { return type_; }
 
-  const char *table_name() const {
-    return table_name_.c_str();
-  }
-  const char *field_name() const {
-    return field_name_.c_str();
-  }
+  const char *table_name() const { return table_name_.c_str(); }
+  const char *field_name() const { return field_name_.c_str(); }
+
+  AggregationType aggregation_type() const { return aggregation_type_; }
 
   std::string to_string() const;
-private:
-  AttrType  type_;
+
+ private:
+  AttrType type_;
   std::string table_name_;
   std::string field_name_;
+  AggregationType aggregation_type_;
 };
 
 class TupleSchema {
-public:
+ public:
   TupleSchema() = default;
   ~TupleSchema() = default;
 
-  void add(AttrType type, const char *table_name, const char *field_name);
-  void add_if_not_exists(AttrType type, const char *table_name, const char *field_name);
+  void add(AttrType type, const char *table_name, const char *field_name,
+           const AggregationType aggregation_type);
+  void add_if_not_exists(AttrType type, const char *table_name,
+                         const char *field_name);
   // void merge(const TupleSchema &other);
   void append(const TupleSchema &other);
 
-  const std::vector<TupleField> &fields() const {
-    return fields_;
-  }
+  const std::vector<TupleField> &fields() const { return fields_; }
 
-  const TupleField &field(int index) const {
-    return fields_[index];
-  }
+  const TupleField &field(int index) const { return fields_[index]; }
 
   int index_of_field(const char *table_name, const char *field_name) const;
-  void clear() {
-    fields_.clear();
-  }
+  void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table) const;
 public:
   static void from_table(const Table *table, TupleSchema &schema);
-private:
+
+ private:
   std::vector<TupleField> fields_;
 };
 
 class TupleSet {
-public:
+ public:
   TupleSet() = default;
   TupleSet(TupleSet &&other);
-  explicit TupleSet(const TupleSchema &schema) : schema_(schema) {
-  }
-  TupleSet &operator =(TupleSet &&other);
+  explicit TupleSet(const TupleSchema &schema) : schema_(schema) {}
+  TupleSet &operator=(TupleSet &&other);
 
   ~TupleSet() = default;
 
@@ -129,7 +121,7 @@ public:
 
   const TupleSchema &get_schema() const;
 
-  void merge(Tuple && tuple, std::vector<AggregationType> aggregation_types);
+  void merge(Tuple &&tuple);
 
   void clear();
 
@@ -149,14 +141,14 @@ private:
 };
 
 class TupleRecordConverter {
-public:
-  TupleRecordConverter(Table *table, TupleSet &tuple_set, std::vector<AggregationType> *aggregation_types);
+ public:
+  TupleRecordConverter(Table *table, TupleSet &tuple_set);
 
   void add_record(const char *record);
-private:
+
+ private:
   Table *table_;
   TupleSet &tuple_set_;
-  std::vector<AggregationType> *aggregation_types_;
 };
 
-#endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_
+#endif  //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

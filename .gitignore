@@ -1,6 +1,9 @@
 build
 .vscode
 
+# Yacc output
+src/observer/sql/parser/yacc_sql.output
+
 # db files
 miniob
 

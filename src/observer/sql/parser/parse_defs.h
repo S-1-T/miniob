@@ -28,9 +28,21 @@ typedef enum  {
   None,
   CountAggregate,
   SumAggregate,
+  AvgAggregate,
   MinAggregate,
   MaxAggregate
 } AggregationType;
+
+inline const char* aggregation_type_to_string(AggregationType type) {
+    switch (type) {
+        case None:           return "none";
+        case CountAggregate: return "count";
+        case SumAggregate:   return "sum";
+        case AvgAggregate:   return "avg";
+        case MinAggregate:   return "min";
+        case MaxAggregate:   return "max";
+    }
+}
 
 //属性结构体
 typedef struct {

@@ -35,14 +35,13 @@ public:
   SelectExeNode();
   virtual ~SelectExeNode();
 
-  RC init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, std::vector<AggregationType> &&aggregation_types);
+  RC init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters);
 
   RC execute(TupleSet &tuple_set) override;
 private:
   Trx *trx_ = nullptr;
   Table  * table_;
   TupleSchema  tuple_schema_;
-  std::vector<AggregationType> aggregation_types_;
   std::vector<DefaultConditionFilter *> condition_filters_;
 };
 
