@@ -221,6 +221,135 @@ static RC schema_add_field(Table *table, const char *field_name, TupleSchema &sc
   return RC::SUCCESS;
 }
 
+// 统一进行 meta 检测, 返回找到的 tables
+// 并为多表构造输出的 schema
+RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema) {
+  // 首先检测 table
+  for (size_t i = 0; i < selects.relation_num; i++) {
+    const char *table_name = selects.relations[i];
+    Table * table = DefaultHandler::get_default().find_table(db, table_name);
+    if (nullptr == table) {
+      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    tables[i] = table;
+  }
+  // 检测 attr 中的 table 是否存在于要查找的 tables 中
+  // 以及 attr 是否存在于此 table 的 fields 中
+  for (size_t i = 0; i < selects.attr_num; i++) {
+    const RelAttr &attr = selects.attributes[i];
+    if (attr.relation_name != nullptr) {
+      bool find = false;
+      size_t table_idx = 0;
+      for (table_idx = 0; table_idx < selects.relation_num; table_idx++) {
+        if (0 == strcmp(attr.relation_name, selects.relations[table_idx])) {
+          find = true;
+          break;
+        }
+      }
+      if (!find) {
+        LOG_WARN("Table [%s] is not in selection's relations", attr.relation_name);
+        return RC::MISMATCH;
+      }
+      if (0 != strcmp("*", attr.attribute_name) &&
+        nullptr == tables[table_idx]->table_meta().field(attr.attribute_name)) {
+        LOG_WARN("No such field [%s] in table [%s]", attr.attribute_name, attr.relation_name);
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    }
+  }
+  // 检测 condition 中的 attr 是否存在于要查找的 tables 中
+  // 以及此 attr 是否存在于此 table 的 fields 中
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &condition = selects.conditions[i];
+    const char *left_table_name = condition.left_attr.relation_name;
+    const char *right_table_name = condition.right_attr.relation_name;
+    bool left_is_attr = condition.left_is_attr;
+    bool right_is_attr = condition.right_is_attr;
+    bool left_find = false;
+    bool right_find = false;
+    size_t left_table_idx = 0;
+    size_t right_table_idx = 0;
+    for (size_t j = 0; j < selects.relation_num; j++) {
+      if (left_is_attr && left_table_name != nullptr &&
+        0 == strcmp(left_table_name, selects.relations[j])) {
+        left_find = true;
+        left_table_idx = j;
+      }
+      if (right_is_attr && right_table_name != nullptr &&
+        0 == strcmp(right_table_name, selects.relations[j])) {
+        right_find = true;
+        right_table_idx = j;
+      }
+    }
+    if (left_is_attr && left_table_name != nullptr && !left_find) {
+      LOG_WARN("left attr's relation [%s] will not be scanned", left_table_name);
+      return RC::MISMATCH;
+    }
+    if (right_is_attr && right_table_name != nullptr && !right_find) {
+      LOG_WARN("right attr's relation [%s] will not be scanned", right_table_name);
+      return RC::MISMATCH;
+    }
+    const char *left_attr_name = condition.left_attr.attribute_name;
+    const char *right_attr_name = condition.right_attr.attribute_name;
+    if (left_is_attr && left_table_name != nullptr &&
+      nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
+      LOG_WARN("left attr [%s] is not exist in [%s]", left_attr_name, left_table_name);
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+    if (right_is_attr && right_table_name != nullptr &&
+        nullptr == tables[right_table_idx]->table_meta().field(right_attr_name)) {
+      LOG_WARN("right attr [%s] is not exist in [%s]", right_attr_name, right_table_name);
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+  }
+  // 为多表查询构造 output_schema
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    if (nullptr != attr.relation_name) {
+      Table *t = nullptr;
+      for (int j = 0; j < selects.relation_num; j++) {
+        if (0 == strcmp(attr.relation_name, tables[j]->name())) {
+          t = tables[j];
+          break;
+        }
+      }
+      if (t == nullptr) {
+        return RC::MISMATCH;
+      }
+      if (0 == strcmp("*", attr.attribute_name)) {
+        TupleSchema temp;
+        TupleSchema::from_table(t, temp);
+        output_schema.append(temp);
+      } else {
+        schema_add_field(t, attr.attribute_name, output_schema);
+      }
+    } else if (0 == strcmp("*", attr.attribute_name)){
+      for (int j = selects.relation_num - 1; j >= 0; j--) {
+        TupleSchema temp;
+        TupleSchema::from_table(tables[j], temp);
+        output_schema.append(temp);
+      }
+    } else {
+      // 检测二义性
+      bool find = false;
+      for (size_t j = 0; j < selects.relation_num; j++) {
+        auto f = tables[j]->table_meta().field(attr.attribute_name);
+        if (f != nullptr) {
+          if (!find) {
+            find = true;
+            schema_add_field(tables[j], attr.attribute_name, output_schema);
+          } else {
+            LOG_WARN("Column [%s] in field list is ambiguous", attr.attribute_name);
+            return RC::SCHEMA_FIELD_EXIST;
+          }
+        }
+      }
+    }
+  }
+  return RC::SUCCESS;
+}
+
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
 // 需要补充上这一部分. 校验部分也可以放在resolve，不过跟execution放一起也没有关系
 RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_event) {
@@ -229,31 +358,13 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
   const Selects &selects = sql->sstr.selection;
-  // 检查 select attr 中的信息
-  for (size_t i = 0; i < selects.attr_num; i++) {
-    const RelAttr &attr = selects.attributes[i];
-    if (attr.relation_name != nullptr &&
-      DefaultHandler::get_default().find_table(db, attr.relation_name) == nullptr) {
-      LOG_WARN("No such table [%s] in db [%s]", attr.relation_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-  }
-  // 检查 condition 中的表信息
-  for (size_t i = 0; i < selects.condition_num; i++) {
-    const Condition &condition = selects.conditions[i];
-    // 检查 condition 的 meta 信息
-    if (condition.left_attr.relation_name != nullptr &&
-        DefaultHandler::get_default().find_table(db, condition.left_attr.relation_name) == nullptr) {
-      LOG_WARN("No such table [%s] in db [%s]", condition.left_attr.relation_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-    if (condition.right_attr.relation_name != nullptr &&
-        DefaultHandler::get_default().find_table(db, condition.right_attr.relation_name) == nullptr) {
-      LOG_WARN("No such table [%s] in db [%s]", condition.right_attr.relation_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-  }
   Table *tables[selects.relation_num];
+  TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
+  rc = selects_meta_check(db, selects, tables, output_schema);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Selection meta test failed");
+    return rc;
+  }
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
@@ -300,35 +411,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做join操作
-    TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
-    for (int i = selects.attr_num - 1; i >= 0; i--) {
-      const RelAttr &attr = selects.attributes[i];
-      if (nullptr != attr.relation_name) {
-        Table *t = nullptr;
-        for (int j = 0; j < selects.relation_num; j++) {
-          if (0 == strcmp(attr.relation_name, tables[j]->name())) {
-            t = tables[j];
-            break;
-          }
-        }
-        if (t == nullptr) {
-          return RC::MISMATCH;
-        }
-        if (0 == strcmp("*", attr.attribute_name)) {
-          TupleSchema temp;
-          TupleSchema::from_table(t, temp);
-          output_schema.append(temp);
-        } else {
-          schema_add_field(t, attr.attribute_name, output_schema);
-        }
-      } else if (0 == strcmp("*", attr.attribute_name)){
-        for (int j = selects.relation_num - 1; j >= 0; j--) {
-          TupleSchema temp;
-          TupleSchema::from_table(tables[j], temp);
-          output_schema.append(temp);
-        }
-      } // 应该不存在其他情况
-    }
     // 提取两边都是 attr 且表不一样的 condition
     int remain_condition_num = 0;
     Condition remain_conditions[MAX_NUM];
@@ -475,7 +557,7 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       } else {
         // 列出这张表相关字段
         RC rc = schema_add_field(table, attr.attribute_name, schema);
-        if (rc != RC::SUCCESS) {
+        if (match_table(selects, attr.relation_name, table_name) && rc != RC::SUCCESS) {
           return rc;
         }
       }
