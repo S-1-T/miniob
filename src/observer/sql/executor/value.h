@@ -29,6 +29,27 @@ public:
 
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
+  virtual bool compare_with_op(const TupleValue &other, CompOp comp) const {
+    auto cmp_result = compare(other);
+    switch (comp) {
+      case EQUAL_TO:
+        return 0 == cmp_result;
+      case LESS_EQUAL:
+        return cmp_result <= 0;
+      case NOT_EQUAL:
+        return cmp_result != 0;
+      case LESS_THAN:
+        return cmp_result < 0;
+      case GREAT_EQUAL:
+        return cmp_result >= 0;
+      case GREAT_THAN:
+        return cmp_result > 0;
+      default:
+        break;
+    }
+    return cmp_result;
+  }
+  virtual AttrType type() const = 0;
 private:
 };
 
@@ -44,6 +65,10 @@ public:
   int compare(const TupleValue &other) const override {
     const IntValue & int_other = (const IntValue &)other;
     return value_ - int_other.value_;
+  }
+
+  AttrType type() const override {
+    return INTS;
   }
 
 private:
@@ -84,6 +109,10 @@ public:
     }
     return 0;
   }
+
+  AttrType type() const override {
+    return FLOATS;
+  }
 private:
   float value_;
 };
@@ -111,6 +140,10 @@ public:
     }
     return 0;
   }
+
+  AttrType type() const override {
+    return DATES;
+  }
 private:
   time_t value_;
 };
@@ -129,6 +162,10 @@ public:
   int compare(const TupleValue &other) const override {
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
+  }
+
+  AttrType type() const override {
+    return CHARS;
   }
 private:
   std::string value_;

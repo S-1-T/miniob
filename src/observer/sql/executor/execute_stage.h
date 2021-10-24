@@ -15,8 +15,10 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_SQL_EXECUTE_STAGE_H__
 #define __OBSERVER_SQL_EXECUTE_STAGE_H__
 
+#include "storage/common/table.h"
 #include "common/seda/stage.h"
 #include "sql/parser/parse.h"
+#include "sql/executor/tuple.h"
 #include "rc.h"
 
 class SessionEvent;
@@ -38,6 +40,7 @@ protected:
                      common::CallbackContext *context) override;
 
   void handle_request(common::StageEvent *event);
+  RC selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema);
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
 protected:
 private:
