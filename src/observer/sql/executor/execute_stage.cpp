@@ -440,10 +440,10 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
       return rc;
     }
     output.set_schema(output_schema);
-    output.print(ss);
+    output.print(ss, true);
   } else {
     // 当前只查询一张表，直接返回结果即可
-    tuple_sets.front().print(ss);
+    tuple_sets.front().print(ss, false);
   }
 
   for (SelectExeNode *& tmp_node: select_nodes) {
