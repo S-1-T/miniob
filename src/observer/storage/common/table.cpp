@@ -237,23 +237,45 @@ RC Table::insert_record(Trx *trx, Record *record) {
     }
   }
 
-  rc = insert_entry_of_indexes(record->data, record->rid);
-  if (rc != RC::SUCCESS) {
-    RC rc2 = delete_entry_of_indexes(record->data, record->rid, true);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC(
-        "Failed to rollback index data when insert index entries "
-        "failed. table name=%s, rc=%d:%s",
-        name(), rc2, strrc(rc2));
+  for (int i = 0; i < indexes_.size(); i++) {
+    rc = indexes_[i]->insert_entry(record->data, &record->rid);
+    if (rc != RC::SUCCESS) {
+      // rollback
+      RC rc2;
+      for (int j = 0; j < i; j++) {
+        rc2 = indexes_[j]->delete_entry(record->data, &record->rid);
+        if (rc2 != RC::SUCCESS && rc2 != RC::RECORD_INVALID_KEY) {
+          LOG_PANIC(
+              "Failed to rollback index data when insert index entries "
+              "failed. table name=%s, rc=%d:%s",
+              name(), rc2, strrc(rc2));
+        }
+      }
+      if (rc != RC::RECORD_DUPLICATE_KEY) {
+        rc2 = indexes_[i]->delete_entry(record->data, &record->rid);
+        if (rc2 != RC::SUCCESS && rc2 != RC::RECORD_INVALID_KEY) {
+          LOG_PANIC(
+              "Failed to rollback index data when insert index entries "
+              "failed. table name=%s, rc=%d:%s",
+              name(), rc2, strrc(rc2));
+        }
+      }
+      rc2 = trx->delete_record(this, record);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC(
+            "Failed to rollback record data when insert index entries "
+            "failed. table name=%s, rc=%d:%s",
+            name(), rc2, strrc(rc2));
+      }
+      rc2 = record_handler_->delete_record(&record->rid);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC(
+            "Failed to rollback record data when insert index entries "
+            "failed. table name=%s, rc=%d:%s",
+            name(), rc2, strrc(rc2));
+      }
+      return rc;
     }
-    rc2 = record_handler_->delete_record(&record->rid);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC(
-        "Failed to rollback record data when insert index entries "
-        "failed. table name=%s, rc=%d:%s",
-        name(), rc2, strrc(rc2));
-    }
-    return rc;
   }
   return rc;
 }
@@ -535,7 +557,7 @@ static RC insert_index_record_reader_adapter(Record *record, void *context) {
 }
 
 RC Table::create_index(Trx *trx, const char *index_name,
-             const char *attribute_name) {
+             const char *attribute_name, bool is_unique) {
   if (index_name == nullptr || common::is_blank(index_name) ||
     attribute_name == nullptr || common::is_blank(attribute_name)) {
     return RC::INVALID_ARGUMENT;
@@ -551,7 +573,7 @@ RC Table::create_index(Trx *trx, const char *index_name,
   }
 
   IndexMeta new_index_meta;
-  RC rc = new_index_meta.init(index_name, *field_meta);
+  RC rc = new_index_meta.init(index_name, *field_meta, is_unique);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -574,6 +596,12 @@ RC Table::create_index(Trx *trx, const char *index_name,
            insert_index_record_reader_adapter);
   if (rc != RC::SUCCESS) {
     // rollback
+    RC close_rc = index->close();
+    if (close_rc != RC::SUCCESS) {
+      LOG_PANIC("Failed to close index file (%s) on table (%s). error=%d:%s",
+                index_file.c_str(), name(), close_rc, strrc(close_rc));
+    }
+    remove(index_file.c_str());
     delete index;
     LOG_ERROR("Failed to insert index to all records. table=%s, rc=%d:%s",
           name(), rc, strrc(rc));

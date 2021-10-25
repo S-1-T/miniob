@@ -61,6 +61,18 @@ RC BplusTreeIndex::close() {
 }
 
 RC BplusTreeIndex::insert_entry(const char *record, const RID *rid) {
+  if (index_meta_.is_unique()) {
+    RID rid_to_find;
+    RC rc = index_handler_.get_entry(record + field_meta_.offset(), &rid_to_find);
+    if (rc == RC::SUCCESS) {
+      LOG_WARN("Index on the key is already exist");
+      return RC::RECORD_DUPLICATE_KEY;
+    }
+    if (rc != RC::RECORD_INVALID_KEY) {
+      LOG_ERROR("Get rid on index failed, rc=%d:%s", rc, strrc(rc));
+      return rc;
+    }
+  }
   return index_handler_.insert_entry(record + field_meta_.offset(), rid);
 }
 
