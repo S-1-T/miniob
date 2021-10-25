@@ -9,10 +9,11 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include <string>
+#include <cstring>
 
 const char *format_double(double value) {
   int sz = std::snprintf(nullptr, 0, "%.2f", value);
-  char *output = (char *)malloc(sz + 1);
+  char *output = new char[sz + 1];
   memset(output, 0, sz + 1);
   std::snprintf(output, sz + 1, "%.2f", value);
   // 消除后缀 0

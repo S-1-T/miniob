@@ -414,6 +414,17 @@ select_attr:
         relation_attr_init_with_aggregation(&attr, $3, $5, $1);
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
+    | aggregation LBRACE STAR RBRACE attr_list {
+        // 对于 * 只有 count(*)
+        RelAttr attr;
+        relation_attr_init_with_aggregation(&attr, NULL, "*", CountAggregate);
+        selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+    }
+    | aggregation LBRACE NUMBER RBRACE attr_list {
+        RelAttr attr;
+        relation_attr_init_with_aggregation(&attr, NULL, NULL, CountAggregate);
+        selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+    }
     ;
 
 attr_list:

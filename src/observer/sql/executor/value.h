@@ -75,7 +75,9 @@ class IntValue : public TupleValue {
         os << count;
       } break;
       case AvgAggregate: {
-        os << format_double(avg_);
+        const char *out = format_double(avg_);
+        os << out;
+        delete[] out;
       } break;
       default: {
         os << value_;
@@ -135,10 +137,14 @@ class FloatValue : public TupleValue {
         os << count;
       } break;
       case AvgAggregate: {
-        os << format_double(avg_);
+        const char *out = format_double(avg_);
+        os << out;
+        delete[] out;
       } break;
       default: {
-        os << format_double(double(value_));
+        const char *out = format_double(double(value_));
+        os << out;
+        delete[] out;
       }
     }
   }

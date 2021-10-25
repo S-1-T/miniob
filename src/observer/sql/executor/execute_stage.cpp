@@ -281,7 +281,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
         LOG_WARN("No such field [%s] in table [%s]", attr.attribute_name, attr.relation_name);
         return RC::SCHEMA_FIELD_NOT_EXIST;
       } else {
-        schema_add_field(t, attr.attribute_name, output_schema);
+        schema_add_field(t, attr.attribute_name, attr.aggregation_type, output_schema);
       }
     } else if (0 == strcmp("*", attr.attribute_name)) {
       for (int j = selects.relation_num - 1; j >= 0; j--) {
@@ -296,7 +296,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       if (RC::SUCCESS != rc) {
         return rc;
       }
-      schema_add_field(tables[idx], attr.attribute_name, output_schema);
+      schema_add_field(tables[idx], attr.attribute_name, attr.aggregation_type, output_schema);
     }
   }
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
@@ -521,7 +521,7 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
       // 只加入要 select 的字段
       output_tuple.add(output_value[i]);
     }
-    output.add(std::move(output_tuple));
+    output.merge(std::move(output_tuple));
     return RC::SUCCESS;
   }
   for (int i = 0; i < current_set.size(); i++) {
@@ -566,12 +566,6 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   const char *table_name = table->name();
-  select_node.set_aggregation(selects.aggregation_num == 0);
-
-  std::unordered_map<const AggregationType*, AggregationInfo> aggregationInfos;
-  for (int i = 0; i < selects.aggregation_num; i++) {
-    aggregationInfos.insert(std::make_pair(&selects.aggregationType[i], AggregationInfo(selects.aggregationType[i])));
-  }
   // TODO: GROUP BY 支持
   bool has_aggregation = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
@@ -624,8 +618,8 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
       condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
-      schema_add_field(table, condition.left_attr.attribute_name, schema);
-      schema_add_field(table, condition.right_attr.attribute_name, schema);
+      schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
+      schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
     }
   }
 
