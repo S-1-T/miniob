@@ -237,6 +237,9 @@ void TupleRecordConverter::add_record(const char *record) {
   const TableMeta &table_meta = table_->table_meta();
   for (const TupleField &field : schema.fields()) {
     const FieldMeta *field_meta = table_meta.field(field.field_name());
+    if (field_meta == nullptr && field.aggregation_type() != None) {
+      field_meta = table_meta.field(0);
+    }
     assert(field_meta != nullptr);
     const AggregationType aggregation_type = field.aggregation_type();
     switch (field_meta->type()) {

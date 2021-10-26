@@ -415,14 +415,13 @@ select_attr:
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
     | aggregation LBRACE STAR RBRACE attr_list {
-        // 对于 * 只有 count(*)
         RelAttr attr;
-        relation_attr_init_with_aggregation(&attr, NULL, "*", CountAggregate);
+        relation_attr_init_with_aggregation(&attr, NULL, "*", $1);
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
     | aggregation LBRACE NUMBER RBRACE attr_list {
         RelAttr attr;
-        relation_attr_init_with_aggregation(&attr, NULL, NULL, CountAggregate);
+        relation_attr_init_with_number_aggregation(&attr, $3, $1);
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
     ;
@@ -458,6 +457,16 @@ attr_list:
     | COMMA aggregation LBRACE ID DOT ID RBRACE attr_list {
         RelAttr attr;
         relation_attr_init_with_aggregation(&attr, $4, $6, $2);
+        selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+    }
+    | COMMA aggregation LBRACE STAR RBRACE attr_list {
+        RelAttr attr;
+        relation_attr_init_with_aggregation(&attr, NULL, "*", $2);
+        selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
+    }
+    | COMMA aggregation LBRACE NUMBER RBRACE attr_list {
+        RelAttr attr;
+        relation_attr_init_with_number_aggregation(&attr, $4, $2);
         selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     }
     ;

@@ -283,13 +283,13 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       } else {
         schema_add_field(t, attr.attribute_name, attr.aggregation_type, output_schema);
       }
-    } else if (0 == strcmp("*", attr.attribute_name)) {
+    } else if (attr.aggregation_type == None && 0 == strcmp("*", attr.attribute_name)) {
       for (int j = selects.relation_num - 1; j >= 0; j--) {
         TupleSchema temp;
         TupleSchema::from_table(tables[j], temp);
         output_schema.append(temp);
       }
-    } else {
+    } else if (attr.is_num == 0 && 0 != strcmp("*", attr.attribute_name)) {
       // 检测二义性
       size_t idx = 0;
       RC rc = check_ambiguous(selects.relation_num, tables, attr.attribute_name, idx);
@@ -380,7 +380,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
-    const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
     rc = create_selection_executor(trx, selects, tables[i], *select_node);
     if (rc != RC::SUCCESS) {
@@ -579,13 +578,24 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       return RC::SCHEMA_FIELD_NAME_ILLEGAL;
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
       if (0 == strcmp("*", attr.attribute_name)) {
-        // TODO: 处理聚合函数诸如 count(*)/count(1) 的特殊情况
         if (attr.aggregation_type != None) {
-          return RC::SCHEMA_FIELD_NAME_ILLEGAL;
+          // count(*)
+          if (attr.aggregation_type != CountAggregate) {
+            return RC::MISMATCH;
+          }
+          schema.add(INTS, table->name(), attr.attribute_name, attr.aggregation_type);
+          continue;
+        } else {
+          // 列出这张表所有字段
+          TupleSchema::from_table(table, schema);
         }
-        // 列出这张表所有字段
-        TupleSchema::from_table(table, schema);
         break; // 没有校验，给出* 之后，再写字段的错误
+      } else if (attr.aggregation_type != None && attr.is_num) {
+        // count(1)
+        if (attr.aggregation_type != CountAggregate) {
+          return RC::MISMATCH;
+        }
+        schema.add(INTS, table->name(), attr.attribute_name, attr.aggregation_type);
       } else {
         // 列出这张表相关字段
         RC rc = schema_add_field(table, attr.attribute_name, attr.aggregation_type, schema);
