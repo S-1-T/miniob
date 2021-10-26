@@ -17,7 +17,9 @@ typedef struct ParserContext {
   size_t condition_length;
   size_t from_length;
   size_t value_length;
+  size_t tuple_num;
   Value values[MAX_NUM];
+  InsertTuple tuples[MAX_NUM];
   Condition conditions[MAX_NUM];
   CompOp comp;
   char id[MAX_NUM];
@@ -44,6 +46,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->from_length = 0;
   context->select_length = 0;
   context->value_length = 0;
+  context->tuple_num = 0;
 //  context->ssql->sstr.insertion.value_num = 0;
   context->ssql->sstr.errors = str;
   printf("parse sql failed. error=%s\n", str);
@@ -115,10 +118,11 @@ ParserContext *get_context(yyscan_t scanner)
   struct _Attr *attr;
   struct _Condition *condition1;
   struct _Value *value1;
+  struct _InsertTuple *tuples1;
   char *string;
   int number;
   float floats;
-    char *position;
+  char *position;
 }
 
 %token <number> NUMBER
@@ -309,21 +313,27 @@ ID_get:
 
     
 insert:				/*insert   语句的语法解析树*/
-    INSERT INTO ID VALUES LBRACE value value_list RBRACE SEMICOLON 
+    INSERT INTO ID VALUES LBRACE value value_list insert_rbrace tuple_list SEMICOLON
         {
-            // CONTEXT->values[CONTEXT->value_length++] = *$6;
-
-            CONTEXT->ssql->flag=SCF_INSERT;//"insert";
-            // CONTEXT->ssql->sstr.insertion.relation_name = $3;
-            // CONTEXT->ssql->sstr.insertion.value_num = CONTEXT->value_length;
-            // for(i = 0; i < CONTEXT->value_length; i++){
-            // 	CONTEXT->ssql->sstr.insertion.values[i] = CONTEXT->values[i];
-      // }
-            inserts_init(&CONTEXT->ssql->sstr.insertion, $3, CONTEXT->values, CONTEXT->value_length);
-
-      //临时变量清零
-      CONTEXT->value_length=0;
+            CONTEXT->ssql->flag=SCF_INSERT; //"insert";
+            inserts_init(&CONTEXT->ssql->sstr.insertion, $3, CONTEXT->tuples, CONTEXT->tuple_num);
+            // 临时变量清零
+            CONTEXT->value_length = 0;
+            CONTEXT->tuple_num = 0;
     };
+
+tuple_list:
+    | COMMA LBRACE value value_list insert_rbrace tuple_list {
+    }
+
+insert_rbrace:
+    RBRACE {
+        // 此规则用于表明读取到一个要 insert 的 tuple，并提高此操作的优先级
+        InsertTuple tuple;
+        insert_tuple_init(&tuple, CONTEXT->values, CONTEXT->value_length);
+        CONTEXT->tuples[CONTEXT->tuple_num++] = tuple;
+        CONTEXT->value_length = 0;
+    }
 
 value_list:
     /* empty */

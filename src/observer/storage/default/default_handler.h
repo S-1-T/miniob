@@ -125,6 +125,11 @@ public:
   RC insert_record(Trx * trx, const char *dbname, const char *relation_name, int value_num, const Value *values);
 
   /**
+   * 该函数与上面的函数类似，不过是批量插入
+   */
+  RC insert_records(Trx * trx, const char *dbname, const char *relation_name, int tuple_num, const InsertTuple *tuples);
+
+  /**
    * 该函数用来删除relName表中所有满足指定条件的元组以及该元组对应的索引项。
    * 如果没有指定条件，则此方法删除relName关系中所有元组。
    * 如果包含多个条件，则这些条件之间为与关系

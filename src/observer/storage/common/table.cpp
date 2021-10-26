@@ -265,9 +265,12 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
     return RC::INVALID_ARGUMENT;
   }
 
-  char *record_data;
+  char *record_data = nullptr;
   RC rc = make_record(value_num, values, record_data);
   if (rc != RC::SUCCESS) {
+    if (record_data != nullptr) {
+      delete[] record_data;
+    }
     LOG_ERROR("Failed to create a record. rc=%d:%s", rc, strrc(rc));
     return rc;
   }
@@ -278,6 +281,37 @@ RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   rc = insert_record(trx, &record);
   delete[] record_data;
   return rc;
+}
+
+RC Table::insert_records(Trx *trx, int tuple_num, const InsertTuple *tuples) {
+  // 先对每个 tuple 做 meta 检查
+  RC rc = RC::SUCCESS;
+  char* records[tuple_num];
+  for (int i = 0; i < tuple_num; i++) {
+    const InsertTuple &tuple = tuples[i];
+    char *record_data = nullptr;
+    rc = make_record(tuple.value_num, tuple.values, record_data);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to create a record. rc=%d:%s", rc, strrc(rc));
+      for (int j = 0; j < i; j++) {
+        delete[] records[j];
+      }
+      return rc;
+    }
+    records[i] = record_data;
+  }
+
+  for (int i = 0; i < tuple_num; i++) {
+    Record record;
+    record.data = records[i];
+    insert_record(trx, &record);  /* 目前不考虑有插入失败的情况 */
+  }
+
+  for (int i = 0; i < tuple_num; i++) {
+    delete[] records[i];
+  }
+//  delete[] records;
+  return RC::SUCCESS;
 }
 
 const char *Table::name() const { return table_meta_.name(); }
