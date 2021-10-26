@@ -23,10 +23,34 @@ See the Mulan PSL v2 for more details. */
 #define MAX_ERROR_MESSAGE 20
 #define MAX_DATA 50
 
+// 聚合函数类型
+typedef enum  {
+  None,
+  CountAggregate,
+  SumAggregate,
+  AvgAggregate,
+  MinAggregate,
+  MaxAggregate
+} AggregationType;
+
+inline const char* aggregation_type_to_string(AggregationType type) {
+    switch (type) {
+        case None:           return "none";
+        case CountAggregate: return "count";
+        case SumAggregate:   return "sum";
+        case AvgAggregate:   return "avg";
+        case MinAggregate:   return "min";
+        case MaxAggregate:   return "max";
+    }
+}
+
 //属性结构体
 typedef struct {
   char *relation_name;   // relation name (may be NULL) 表名
   char *attribute_name;  // attribute name              属性名
+  AggregationType aggregation_type; // aggregation type 聚合函数类型
+  int is_num;
+  int num;
 } RelAttr;
 
 typedef enum {
@@ -64,7 +88,7 @@ typedef struct _Condition {
 typedef struct {
   size_t    attr_num;               // Length of attrs in Select clause
   RelAttr   attributes[MAX_NUM];    // attrs in Select clause
-  size_t    relation_num;           // Length of relations in Fro clause
+  size_t    relation_num;           // Length of relations in From clause
   char *    relations[MAX_NUM];     // relations in From clause
   size_t    condition_num;          // Length of conditions in Where clause
   Condition conditions[MAX_NUM];    // conditions in Where clause
@@ -179,6 +203,8 @@ extern "C" {
 #endif  // __cplusplus
 
 void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const char *attribute_name);
+void relation_attr_init_with_aggregation(RelAttr *relation_attr, const char *relation_name, const char *attribute_name, AggregationType aggregation_type);
+void relation_attr_init_with_number_aggregation(RelAttr *relation_attr, int number, AggregationType aggregation_type);
 void relation_attr_destroy(RelAttr *relation_attr);
 
 void value_init_integer(Value *value, int v);

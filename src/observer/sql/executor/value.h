@@ -15,19 +15,23 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_SQL_EXECUTOR_VALUE_H_
 #define __OBSERVER_SQL_EXECUTOR_VALUE_H_
 
-#include <string.h>
-
-#include <string>
-#include <ostream>
-#include <ctime>
 #include <cstdio>
+#include <ctime>
+#include <ostream>
+#include <string>
+
+#include "common/log/log.h"
+#include "sql/parser/parse.h"
+
+const char *format_double(double value);
 
 class TupleValue {
-public:
+ public:
   TupleValue() = default;
   virtual ~TupleValue() = default;
 
   virtual void to_string(std::ostream &os) const = 0;
+  virtual void merge(const TupleValue &other) = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool compare_with_op(const TupleValue &other, CompOp comp) const {
     auto cmp_result = compare(other);
@@ -50,20 +54,63 @@ public:
     return cmp_result;
   }
   virtual AttrType type() const = 0;
-private:
+  AggregationType aggregation_type() const { return aggregation_type_; }
+
+ protected:
+  int count = 1;
+  AggregationType aggregation_type_ = None;
 };
 
 class IntValue : public TupleValue {
-public:
-  explicit IntValue(int value) : value_(value) {
+ public:
+  explicit IntValue(int value) : value_(value), avg_(value) {}
+  explicit IntValue(int value, AggregationType aggregation_type)
+      : value_(value), avg_(value) {
+    aggregation_type_ = aggregation_type;
   }
 
   void to_string(std::ostream &os) const override {
-    os << value_;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        os << count;
+      } break;
+      case AvgAggregate: {
+        const char *out = format_double(avg_);
+        os << out;
+        delete[] out;
+      } break;
+      default: {
+        os << value_;
+      }
+    }
+  }
+
+  void merge(const TupleValue &other) override {
+    const IntValue &int_other = (const IntValue &)other;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        count++;
+      } break;
+      case SumAggregate: {
+        value_ = value_ + int_other.value_;
+      } break;
+      case AvgAggregate: {
+        int pre_count = count++;
+        avg_ = (avg_ * pre_count + int_other.value_) / count;
+      } break;
+      case MaxAggregate: {
+        if (compare(int_other) < 0) value_ = int_other.value_;
+      } break;
+      case MinAggregate: {
+        if (compare(int_other) > 0) value_ = int_other.value_;
+      }
+      default: {
+      }
+    }
   }
 
   int compare(const TupleValue &other) const override {
-    const IntValue & int_other = (const IntValue &)other;
+    const IntValue &int_other = (const IntValue &)other;
     return value_ - int_other.value_;
   }
 
@@ -73,35 +120,63 @@ public:
 
 private:
   int value_;
+  double avg_ = 0;
 };
 
 class FloatValue : public TupleValue {
-public:
-  explicit FloatValue(float value) : value_(value) {
+ public:
+  explicit FloatValue(float value) : value_(value), avg_(value) {}
+  explicit FloatValue(float value, AggregationType aggregation_type)
+      : value_(value), avg_(value) {
+    aggregation_type_ = aggregation_type;
   }
 
   void to_string(std::ostream &os) const override {
-    int sz = std::snprintf(nullptr, 0, "%.2f", value_);
-    char output[sz + 1];
-    memset(output, 0, sz + 1);
-    std::snprintf(output, sz + 1, "%.2f", value_);
-    // 消除后缀 0
-    for (int i = sz; i >= 0; i--) {
-      if (output[i] != '\0' && output[i] != '0') {
-        output[i + 1] = '\0';
-        if (output[i] == '.') {
-          output[i] = '\0';
-        }
-        break;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        os << count;
+      } break;
+      case AvgAggregate: {
+        const char *out = format_double(avg_);
+        os << out;
+        delete[] out;
+      } break;
+      default: {
+        const char *out = format_double(double(value_));
+        os << out;
+        delete[] out;
       }
     }
-    os << output;
+  }
+
+  void merge(const TupleValue &other) override {
+    const FloatValue &float_other = (const FloatValue &)other;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        count++;
+      } break;
+      case SumAggregate: {
+        value_ = value_ + float_other.value_;
+      } break;
+      case AvgAggregate: {
+        int pre_count = count++;
+        avg_ = (avg_ * pre_count + float_other.value_) / count;
+      } break;
+      case MaxAggregate: {
+        if (compare(float_other) < 0) value_ = float_other.value_;
+      } break;
+      case MinAggregate: {
+        if (compare(float_other) > 0) value_ = float_other.value_;
+      }
+      default: {
+      }
+    }
   }
 
   int compare(const TupleValue &other) const override {
-    const FloatValue & float_other = (const FloatValue &)other;
+    const FloatValue &float_other = (const FloatValue &)other;
     float result = value_ - float_other.value_;
-    if (result > 0) { // 浮点数没有考虑精度问题
+    if (result > 0) {  // 浮点数没有考虑精度问题
       return 1;
     }
     if (result < 0) {
@@ -115,22 +190,50 @@ public:
   }
 private:
   float value_;
+  double avg_ = 0;
 };
 
 class DateValue : public TupleValue {
-public:
-  explicit DateValue(time_t value) : value_(value) {
+ public:
+  explicit DateValue(time_t value) : value_(value) {}
+  explicit DateValue(time_t value, AggregationType aggregation_type)
+      : value_(value) {
+    aggregation_type_ = aggregation_type;
   }
 
   void to_string(std::ostream &os) const override {
-    struct tm *ptm = std::localtime(&value_);
-    char buffer[32];
-    strftime(buffer, 32, "%Y-%m-%d", ptm);
-    os << buffer;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        os << count;
+      } break;
+      default: {
+        struct tm *ptm = std::localtime(&value_);
+        char buffer[32];
+        strftime(buffer, 32, "%Y-%m-%d", ptm);
+        os << buffer;
+      }
+    }
+  }
+
+  void merge(const TupleValue &other) override {
+    const DateValue &date_other = (const DateValue &)other;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        count++;
+      } break;
+      case MaxAggregate: {
+        if (compare(date_other) < 0) value_ = date_other.value_;
+      } break;
+      case MinAggregate: {
+        if (compare(date_other) > 0) value_ = date_other.value_;
+      }
+      default: {
+      }
+    }
   }
 
   int compare(const TupleValue &other) const override {
-    const DateValue & date_other = (const DateValue &)other;
+    const DateValue &date_other = (const DateValue &)other;
     double diff_seconds = difftime(value_, date_other.value_);
     if (diff_seconds > 0) {
       return 1;
@@ -149,14 +252,37 @@ private:
 };
 
 class StringValue : public TupleValue {
-public:
-  StringValue(const char *value, int len) : value_(value, len){
+ public:
+  StringValue(const char *value, int len) : value_(value, len) {}
+  StringValue(const char *value, int len, AggregationType aggregation_type)
+      : value_(value, len) {
+    aggregation_type_ = aggregation_type;
   }
-  explicit StringValue(const char *value) : value_(value) {
+  explicit StringValue(const char *value) : value_(value) {}
+  explicit StringValue(const char *value, AggregationType aggregation_type)
+      : value_(value) {
+    aggregation_type_ = aggregation_type;
   }
 
   void to_string(std::ostream &os) const override {
-    os << value_;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        os << count;
+      } break;
+      default: {
+        os << value_;
+      }
+    }
+  }
+
+  void merge(const TupleValue &other) override {
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        count++;
+      } break;
+      default: {
+      }
+    }
   }
 
   int compare(const TupleValue &other) const override {
@@ -171,5 +297,4 @@ private:
   std::string value_;
 };
 
-
-#endif //__OBSERVER_SQL_EXECUTOR_VALUE_H_
+#endif  //__OBSERVER_SQL_EXECUTOR_VALUE_H_

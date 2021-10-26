@@ -43,6 +43,8 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
 
 RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions, std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index);
 
+static RC schema_add_field(Table *table, const char *field_name, AggregationType aggregation_type, TupleSchema &schema);
+
 //! Constructor
 ExecuteStage::ExecuteStage(const char *tag) : Stage(tag) {}
 
@@ -51,7 +53,7 @@ ExecuteStage::~ExecuteStage() {}
 
 //! Parse properties, instantiate a stage object
 Stage *ExecuteStage::make_stage(const std::string &tag) {
-  ExecuteStage *stage = new (std::nothrow) ExecuteStage(tag.c_str());
+  ExecuteStage *stage = new(std::nothrow) ExecuteStage(tag.c_str());
   if (stage == nullptr) {
     LOG_ERROR("new ExecuteStage failed");
     return nullptr;
@@ -119,7 +121,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   Query *sql = exe_event->sqls();
   const char *current_db = session_event->get_client()->session->get_current_db().c_str();
 
-  CompletionCallback *cb = new (std::nothrow) CompletionCallback(this, nullptr);
+  CompletionCallback *cb = new(std::nothrow) CompletionCallback(this, nullptr);
   if (cb == nullptr) {
     LOG_ERROR("Failed to new callback for ExecutionPlanEvent");
     exe_event->done_immediate();
@@ -134,7 +136,8 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
           do_select(current_db, sql, exe_event->sql_event()->session_event());
       // 出错时返回 FAILURE
       if (rc != RC::SUCCESS) snprintf(response, sizeof(response), "FAILURE\n");
-    } break;
+    }
+      break;
 
     case SCF_INSERT:
     case SCF_UPDATE:
@@ -146,7 +149,7 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     case SCF_CREATE_INDEX:
     case SCF_DROP_INDEX:
     case SCF_LOAD_DATA: {
-      StorageEvent *storage_event = new (std::nothrow) StorageEvent(exe_event);
+      StorageEvent *storage_event = new(std::nothrow) StorageEvent(exe_event);
       if (storage_event == nullptr) {
         LOG_ERROR("Failed to new StorageEvent");
         event->done_immediate();
@@ -154,27 +157,32 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       }
 
       default_storage_stage_->handle_event(storage_event);
-    } break;
+    }
+      break;
     case SCF_SYNC: {
       RC rc = DefaultHandler::get_default().sync();
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_BEGIN: {
       session_event->get_client()->session->set_trx_multi_operation_mode(true);
       snprintf(response, sizeof(response), "%s\n", strrc(RC::SUCCESS));
-    } break;
+    }
+      break;
     case SCF_COMMIT: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->commit();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_ROLLBACK: {
       Trx *trx = session_event->get_client()->session->current_trx();
       RC rc = trx->rollback();
       session_event->get_client()->session->set_trx_multi_operation_mode(false);
       snprintf(response, sizeof(response), "%s\n", strrc(rc));
-    } break;
+    }
+      break;
     case SCF_HELP: {
       snprintf(response, sizeof(response),
                "show tables;\n"
@@ -187,11 +195,13 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
                "update `table` set column=value [where `column`=`value`];\n"
                "delete from `table` [where `column`=`value`];\n"
                "select [ * | `columns` ] from `table`;\n");
-    } break;
+    }
+      break;
     case SCF_EXIT: {
       // do nothing
       snprintf(response, sizeof(response), "Unsupported\n");
-    } break;
+    }
+      break;
     default: {
       LOG_ERROR("Unsupported command=%d\n", sql->flag);
     }
@@ -208,17 +218,6 @@ void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
       trx->rollback();
     }
   }
-}
-
-static RC schema_add_field(Table *table, const char *field_name, TupleSchema &schema) {
-  const FieldMeta *field_meta = table->table_meta().field(field_name);
-  if (nullptr == field_meta) {
-    LOG_WARN("No such field. %s.%s", table->name(), field_name);
-    return RC::SCHEMA_FIELD_MISSING;
-  }
-
-  schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
-  return RC::SUCCESS;
 }
 
 // 检查二义性，并得到正确时的表 index
@@ -282,22 +281,22 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
         LOG_WARN("No such field [%s] in table [%s]", attr.attribute_name, attr.relation_name);
         return RC::SCHEMA_FIELD_NOT_EXIST;
       } else {
-        schema_add_field(t, attr.attribute_name, output_schema);
+        schema_add_field(t, attr.attribute_name, attr.aggregation_type, output_schema);
       }
-    } else if (0 == strcmp("*", attr.attribute_name)) {
+    } else if (attr.aggregation_type == None && 0 == strcmp("*", attr.attribute_name)) {
       for (int j = selects.relation_num - 1; j >= 0; j--) {
         TupleSchema temp;
         TupleSchema::from_table(tables[j], temp);
         output_schema.append(temp);
       }
-    } else {
+    } else if (attr.is_num == 0 && 0 != strcmp("*", attr.attribute_name)) {
       // 检测二义性
       size_t idx = 0;
       RC rc = check_ambiguous(selects.relation_num, tables, attr.attribute_name, idx);
       if (RC::SUCCESS != rc) {
         return rc;
       }
-      schema_add_field(tables[idx], attr.attribute_name, output_schema);
+      schema_add_field(tables[idx], attr.attribute_name, attr.aggregation_type, output_schema);
     }
   }
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
@@ -377,21 +376,15 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     LOG_ERROR("Selection meta test failed");
     return rc;
   }
+
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
-    const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
-    Table * table = DefaultHandler::get_default().find_table(db, table_name);
-    if (nullptr == table) {
-      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-    tables[i] = table;
-    rc = create_selection_executor(trx, selects, table, *select_node);
+    rc = create_selection_executor(trx, selects, tables[i], *select_node);
     if (rc != RC::SUCCESS) {
       delete select_node;
-      for (SelectExeNode *& tmp_node: select_nodes) {
+      for (SelectExeNode *&tmp_node: select_nodes) {
         delete tmp_node;
       }
       end_trx_if_need(session, trx, false);
@@ -410,7 +403,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     TupleSet tuple_set;
     rc = node->execute(tuple_set);
     if (rc != RC::SUCCESS) {
-      for (SelectExeNode *& tmp_node: select_nodes) {
+      for (SelectExeNode *&tmp_node: select_nodes) {
         delete tmp_node;
       }
       end_trx_if_need(session, trx, false);
@@ -446,7 +439,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     tuple_sets.front().print(ss, false);
   }
 
-  for (SelectExeNode *& tmp_node: select_nodes) {
+  for (SelectExeNode *&tmp_node: select_nodes) {
     delete tmp_node;
   }
   session_event->set_response(ss.str());
@@ -527,7 +520,7 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
       // 只加入要 select 的字段
       output_tuple.add(output_value[i]);
     }
-    output.add(std::move(output_tuple));
+    output.merge(std::move(output_tuple));
     return RC::SUCCESS;
   }
   for (int i = 0; i < current_set.size(); i++) {
@@ -554,27 +547,65 @@ bool match_table(const Selects &selects, const char *table_name_in_condition, co
   return selects.relation_num == 1;
 }
 
+static RC schema_add_field(Table *table, const char *field_name, AggregationType aggregation_type, TupleSchema &schema) {
+  const FieldMeta *field_meta = table->table_meta().field(field_name);
+  if (nullptr == field_meta) {
+    LOG_WARN("No such field. %s.%s", table->name(), field_name);
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+  if (aggregation_type == None)
+    schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
+  else
+    schema.add(field_meta->type(), table->name(), field_meta->name(), aggregation_type);
+  return RC::SUCCESS;
+}
+
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
 RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   const char *table_name = table->name();
+  // TODO: GROUP BY 支持
+  bool has_aggregation = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
+    if (attr.aggregation_type != None)
+      has_aggregation = true;
+  }
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    if (attr.aggregation_type == None && has_aggregation)
+      return RC::SCHEMA_FIELD_NAME_ILLEGAL;
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
       if (0 == strcmp("*", attr.attribute_name)) {
-        // 列出这张表所有字段
-        TupleSchema::from_table(table, schema);
+        if (attr.aggregation_type != None) {
+          // count(*)
+          if (attr.aggregation_type != CountAggregate) {
+            return RC::MISMATCH;
+          }
+          schema.add(INTS, table->name(), attr.attribute_name, attr.aggregation_type);
+          continue;
+        } else {
+          // 列出这张表所有字段
+          TupleSchema::from_table(table, schema);
+        }
         break; // 没有校验，给出* 之后，再写字段的错误
+      } else if (attr.aggregation_type != None && attr.is_num) {
+        // count(1)
+        if (attr.aggregation_type != CountAggregate) {
+          return RC::MISMATCH;
+        }
+        schema.add(INTS, table->name(), attr.attribute_name, attr.aggregation_type);
       } else {
         // 列出这张表相关字段
-        RC rc = schema_add_field(table, attr.attribute_name, schema);
+        RC rc = schema_add_field(table, attr.attribute_name, attr.aggregation_type, schema);
         if (match_table(selects, attr.relation_name, table_name) && rc != RC::SUCCESS) {
           return rc;
         }
       }
     }
   }
+
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
@@ -597,8 +628,8 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
       condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
-      schema_add_field(table, condition.left_attr.attribute_name, schema);
-      schema_add_field(table, condition.right_attr.attribute_name, schema);
+      schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
+      schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
     }
   }
 

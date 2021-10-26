@@ -12,22 +12,22 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/14.
 //
 
+#include "sql/executor/tuple.h"
+
 #include <ctime>
 #include <iostream>
 
-#include "sql/executor/tuple.h"
-#include "storage/common/table.h"
 #include "common/log/log.h"
+#include "storage/common/table.h"
 
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
   exit(1);
 }
 
-Tuple::Tuple(Tuple &&other) noexcept : values_(std::move(other.values_)) {
-}
+Tuple::Tuple(Tuple &&other) noexcept : values_(std::move(other.values_)) {}
 
-Tuple & Tuple::operator=(Tuple &&other) noexcept {
+Tuple &Tuple::operator=(Tuple &&other) noexcept {
   if (&other == this) {
     return *this;
   }
@@ -37,30 +37,27 @@ Tuple & Tuple::operator=(Tuple &&other) noexcept {
   return *this;
 }
 
-Tuple::~Tuple() {
-}
+Tuple::~Tuple() {}
 
 // add (Value && value)
-void Tuple::add(TupleValue *value) {
-  values_.emplace_back(value);
-}
+void Tuple::add(TupleValue *value) { values_.emplace_back(value); }
 void Tuple::add(const std::shared_ptr<TupleValue> &other) {
   values_.emplace_back(other);
 }
-void Tuple::add(int value) {
-  add(new IntValue(value));
+void Tuple::add(int value, AggregationType aggregation_type) {
+  add(new IntValue(value, aggregation_type));
 }
 
-void Tuple::add(float value) {
-  add(new FloatValue(value));
+void Tuple::add(float value, AggregationType aggregation_type) {
+  add(new FloatValue(value, aggregation_type));
 }
 
-void Tuple::add(time_t value) {
-  add(new DateValue(value));
+void Tuple::add(time_t value, AggregationType aggregation_type) {
+  add(new DateValue(value, aggregation_type));
 }
 
-void Tuple::add(const char *s, int len) {
-  add(new StringValue(s, len));
+void Tuple::add(const char *s, int len, AggregationType aggregation_type) {
+  add(new StringValue(s, len, aggregation_type));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,38 +74,44 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
   for (int i = 0; i < field_num; i++) {
     const FieldMeta *field_meta = table_meta.field(i);
     if (field_meta->visible()) {
-      schema.add(field_meta->type(), table_name, field_meta->name());
+      schema.add(field_meta->type(), table_name, field_meta->name(),
+                 AggregationType::None);
     }
   }
 }
 
-void TupleSchema::add(AttrType type, const char *table_name, const char *field_name) {
-  fields_.emplace_back(type, table_name, field_name);
+void TupleSchema::add(AttrType type, const char *table_name,
+                      const char *field_name,
+                      const AggregationType aggregation_type) {
+  fields_.emplace_back(type, table_name, field_name, aggregation_type);
 }
 
-void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const char *field_name) {
-  for (const auto &field: fields_) {
+void TupleSchema::add_if_not_exists(AttrType type, const char *table_name,
+                                    const char *field_name) {
+  for (const auto &field : fields_) {
     if (0 == strcmp(field.table_name(), table_name) &&
         0 == strcmp(field.field_name(), field_name)) {
       return;
     }
   }
 
-  add(type, table_name, field_name);
+  add(type, table_name, field_name, AggregationType::None);
 }
 
 void TupleSchema::append(const TupleSchema &other) {
   fields_.reserve(fields_.size() + other.fields_.size());
-  for (const auto &field: other.fields_) {
+  for (const auto &field : other.fields_) {
     fields_.emplace_back(field);
   }
 }
 
-int TupleSchema::index_of_field(const char *table_name, const char *field_name) const {
+int TupleSchema::index_of_field(const char *table_name,
+                                const char *field_name) const {
   const int size = fields_.size();
   for (int i = 0; i < size; i++) {
     const TupleField &field = fields_[i];
-    if (0 == strcmp(field.table_name(), table_name) && 0 == strcmp(field.field_name(), field_name)) {
+    if (0 == strcmp(field.table_name(), table_name) &&
+        0 == strcmp(field.field_name(), field_name)) {
       return i;
     }
   }
@@ -123,20 +126,30 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
 
   for (std::vector<TupleField>::const_iterator iter = fields_.begin(), end = --fields_.end();
        iter != end; ++iter) {
+    const AggregationType aggregation_type = iter->aggregation_type();
+    if (aggregation_type != None)
+      os << aggregation_type_to_string(aggregation_type) << "(";
     if (multi_table) {
       os << iter->table_name() << ".";
     }
-    os << iter->field_name() << " | ";
+    os << iter->field_name();
+    if (aggregation_type != None) os << ")";
+    os << " | ";
   }
-
+  const AggregationType aggregation_type = fields_.back().aggregation_type();
+  if (aggregation_type != None)
+    os << aggregation_type_to_string(aggregation_type) << "(";
   if (multi_table) {
     os << fields_.back().table_name() << ".";
   }
-  os << fields_.back().field_name() << std::endl;
+  os << fields_.back().field_name();
+  if (aggregation_type != None) os << ")";
+  os << std::endl;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleSet::TupleSet(TupleSet &&other) : tuples_(std::move(other.tuples_)), schema_(other.schema_){
+TupleSet::TupleSet(TupleSet &&other)
+    : tuples_(std::move(other.tuples_)), schema_(other.schema_) {
   other.schema_.clear();
 }
 
@@ -154,8 +167,25 @@ TupleSet &TupleSet::operator=(TupleSet &&other) {
   return *this;
 }
 
-void TupleSet::add(Tuple &&tuple) {
-  tuples_.emplace_back(std::move(tuple));
+void TupleSet::merge(Tuple &&tuple) {
+  if (tuples_.empty()) {
+    tuples_.emplace_back(std::move(tuple));
+    return;
+  }
+  // 聚合运算的每一个阶段，tuples_ 都只含有一个 Tuple
+  const std::vector<std::shared_ptr<TupleValue>> old_values =
+      tuples_[0].values();
+  int value_idx = 0;
+  for (std::shared_ptr<TupleValue> old_value : old_values) {
+    // 正常扫表而非聚合运算，直接将 tuple 存入
+    if (old_value->aggregation_type() == None) {
+      tuples_.emplace_back(std::move(tuple));
+      return;
+    }
+    // 聚合函数的 Merge 计算
+    old_value->merge(tuple.get(value_idx++));
+  }
+  return;
 }
 
 void TupleSet::clear() {
@@ -173,8 +203,10 @@ void TupleSet::print(std::ostream &os, bool multi_table) const {
 
   for (const Tuple &item : tuples_) {
     const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
-    for (std::vector<std::shared_ptr<TupleValue>>::const_iterator iter = values.begin(), end = --values.end();
-          iter != end; ++iter) {
+    for (std::vector<std::shared_ptr<TupleValue>>::const_iterator
+             iter = values.begin(),
+             end = --values.end();
+         iter != end; ++iter) {
       (*iter)->to_string(os);
       os << " | ";
     }
@@ -183,34 +215,21 @@ void TupleSet::print(std::ostream &os, bool multi_table) const {
   }
 }
 
-void TupleSet::set_schema(const TupleSchema &schema) {
-  schema_ = schema;
-}
+void TupleSet::set_schema(const TupleSchema &schema) { schema_ = schema; }
 
-const TupleSchema &TupleSet::get_schema() const {
-  return schema_;
-}
+const TupleSchema &TupleSet::get_schema() const { return schema_; }
 
-bool TupleSet::is_empty() const {
-  return tuples_.empty();
-}
+bool TupleSet::is_empty() const { return tuples_.empty(); }
 
-int TupleSet::size() const {
-  return tuples_.size();
-}
+int TupleSet::size() const { return tuples_.size(); }
 
-const Tuple &TupleSet::get(int index) const {
-  return tuples_[index];
-}
+const Tuple &TupleSet::get(int index) const { return tuples_[index]; }
 
-const std::vector<Tuple> &TupleSet::tuples() const {
-  return tuples_;
-}
+const std::vector<Tuple> &TupleSet::tuples() const { return tuples_; }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set) :
-      table_(table), tuple_set_(tuple_set){
-}
+TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set)
+    : table_(table), tuple_set_(tuple_set) {}
 
 void TupleRecordConverter::add_record(const char *record) {
   const TupleSchema &schema = tuple_set_.schema();
@@ -218,35 +237,33 @@ void TupleRecordConverter::add_record(const char *record) {
   const TableMeta &table_meta = table_->table_meta();
   for (const TupleField &field : schema.fields()) {
     const FieldMeta *field_meta = table_meta.field(field.field_name());
+    if (field_meta == nullptr && field.aggregation_type() != None) {
+      field_meta = table_meta.field(0);
+    }
     assert(field_meta != nullptr);
+    const AggregationType aggregation_type = field.aggregation_type();
     switch (field_meta->type()) {
       case INTS: {
-        int value = *(int*)(record + field_meta->offset());
-        tuple.add(value);
-      }
-      break;
+        int value = *(int *)(record + field_meta->offset());
+        tuple.add(value, aggregation_type);
+      } break;
       case FLOATS: {
         float value = *(float *)(record + field_meta->offset());
-        tuple.add(value);
-      }
-      break;
+        tuple.add(value, aggregation_type);
+      } break;
       case DATES: {
         time_t value = *(time_t *)(record + field_meta->offset());
-        tuple.add(value);
-      }
-      break;
+        tuple.add(value, aggregation_type);
+      } break;
       case CHARS: {
         const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
-        tuple.add(s, strlen(s));
-      }
-      break;
+        tuple.add(s, strlen(s), aggregation_type);
+      } break;
       default: {
         LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
       }
     }
   }
 
-  tuple_set_.add(std::move(tuple));
+  tuple_set_.merge(std::move(tuple));
 }
-
-

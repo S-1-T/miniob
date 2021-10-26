@@ -30,6 +30,28 @@ void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const
     relation_attr->relation_name = nullptr;
   }
   relation_attr->attribute_name = strdup(attribute_name);
+  relation_attr->aggregation_type = AggregationType::None;
+  relation_attr->is_num = 0;
+}
+void relation_attr_init_with_aggregation(RelAttr *relation_attr, const char *relation_name, const char *attribute_name, AggregationType aggregation_type) {
+  if (relation_name != nullptr) {
+    relation_attr->relation_name = strdup(relation_name);
+  } else {
+    relation_attr->relation_name = nullptr;
+  }
+  relation_attr->attribute_name = strdup(attribute_name);
+  relation_attr->aggregation_type = aggregation_type;
+  relation_attr->is_num = 0;
+}
+
+void relation_attr_init_with_number_aggregation(RelAttr *relation_attr, int number, AggregationType aggregation_type) {
+  relation_attr->relation_name = nullptr;
+  char attribute_name[MAX_NUM];
+  snprintf(attribute_name, MAX_NUM, "%d", number);
+  relation_attr->attribute_name = strdup(attribute_name);
+  relation_attr->aggregation_type = aggregation_type;
+  relation_attr->is_num = 1;
+  relation_attr->num = number;
 }
 
 void relation_attr_destroy(RelAttr *relation_attr) {
@@ -37,6 +59,7 @@ void relation_attr_destroy(RelAttr *relation_attr) {
   free(relation_attr->attribute_name);
   relation_attr->relation_name = nullptr;
   relation_attr->attribute_name = nullptr;
+  relation_attr->aggregation_type = AggregationType::None;
 }
 
 void value_init_integer(Value *value, int v) {
