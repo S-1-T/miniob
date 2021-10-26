@@ -293,7 +293,7 @@ RC Table::insert_records(Trx *trx, int tuple_num, const InsertTuple *tuples) {
     rc = make_record(tuple.value_num, tuple.values, record_data);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to create a record. rc=%d:%s", rc, strrc(rc));
-      for (int j = 0; j <= i; j++) {
+      for (int j = 0; j < i; j++) {
         delete[] records[j];
       }
       return rc;
