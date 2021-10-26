@@ -276,10 +276,17 @@ class StringValue : public TupleValue {
   }
 
   void merge(const TupleValue &other) override {
+    const StringValue &string_other = (const StringValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
         count++;
       } break;
+      case MaxAggregate: {
+        if (compare(string_other) < 0) value_ = string_other.value_;
+      } break;
+      case MinAggregate: {
+        if (compare(string_other) > 0) value_ = string_other.value_;
+      }
       default: {
       }
     }
