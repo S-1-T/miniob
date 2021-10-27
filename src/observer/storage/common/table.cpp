@@ -323,17 +323,31 @@ RC Table::insert_records(Trx *trx, int tuple_num, const InsertTuple *tuples) {
     records[i] = record_data;
   }
 
+  Record temp[tuple_num];
   for (int i = 0; i < tuple_num; i++) {
     Record record;
     record.data = records[i];
-    insert_record(trx, &record);  /* 目前不考虑有插入失败的情况 */
+    rc = insert_record(trx, &record);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to insert a record, rc=%d:%s", rc, strrc(rc));
+      RC rc2;
+      // rollback
+      // 对于唯一索引，这里其实可以做成一个预判断，目前图方便就这么写了
+      for (int j = 0; j < i; j++) {
+        rc2 = delete_record(nullptr, &temp[j]);
+        if (rc2 != RC::SUCCESS) {
+          LOG_PANIC("Rollback inserts failed, rc=%d:%s", rc2, strrc(rc2));
+        }
+      }
+      break;
+    }
+    temp[i] = record;
   }
 
   for (int i = 0; i < tuple_num; i++) {
     delete[] records[i];
   }
-//  delete[] records;
-  return RC::SUCCESS;
+  return rc;
 }
 
 const char *Table::name() const { return table_meta_.name(); }
