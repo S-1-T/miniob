@@ -123,6 +123,16 @@ void attr_info_destroy(AttrInfo *attr_info) {
   attr_info->name = nullptr;
 }
 
+void order_attr_init(OrderBy *order_attr, RelAttr *attr, OrderType type) {
+  order_attr->attr = *attr;
+  order_attr->type = type;
+}
+
+void order_attr_destroy(OrderBy *order_attr) {
+  relation_attr_destroy(&order_attr->attr);
+  order_attr->type = AscOrder;
+}
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
   selects->attributes[selects->attr_num++] = *rel_attr;
@@ -137,6 +147,10 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
     selects->conditions[i] = conditions[i];
   }
   selects->condition_num = condition_num;
+}
+
+void selects_append_order_by(Selects *selects, OrderBy *order_by) {
+  selects->order_bys[selects->order_by_num++] = *order_by;
 }
 
 void selects_destroy(Selects *selects) {
@@ -155,6 +169,11 @@ void selects_destroy(Selects *selects) {
     condition_destroy(&selects->conditions[i]);
   }
   selects->condition_num = 0;
+
+  for (size_t i = 0; i < selects->order_by_num; i++) {
+    order_attr_destroy(&selects->order_bys[i]);
+  }
+  selects->order_by_num = 0;
 }
 
 void insert_tuple_init(InsertTuple *tuple, Value values[], size_t value_num) {

@@ -358,6 +358,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
   }
+  // TODO 对 order by 做 meta 检测
   return RC::SUCCESS;
 }
 
@@ -413,6 +414,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     }
   }
 
+  // TODO 支持 ORDER BY，对结果进行排序
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做join操作
@@ -628,10 +630,12 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
       condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
+      // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
     }
   }
+  // TODO 加入 ORDER BY 需要的字段
 
   return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }

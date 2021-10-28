@@ -33,6 +33,12 @@ typedef enum  {
   MaxAggregate
 } AggregationType;
 
+// 排序类型
+typedef enum {
+  AscOrder,
+  DescOrder
+} OrderType;
+
 inline const char* aggregation_type_to_string(AggregationType type) {
     switch (type) {
         case None:           return "none";
@@ -84,6 +90,11 @@ typedef struct _Condition {
   Value right_value;   // right-hand side value if right_is_attr = FALSE
 } Condition;
 
+typedef struct _OrderBy {
+  OrderType type;
+  RelAttr attr;
+} OrderBy;
+
 // struct of select
 typedef struct {
   size_t    attr_num;               // Length of attrs in Select clause
@@ -92,6 +103,8 @@ typedef struct {
   char *    relations[MAX_NUM];     // relations in From clause
   size_t    condition_num;          // Length of conditions in Where clause
   Condition conditions[MAX_NUM];    // conditions in Where clause
+  size_t    order_by_num;
+  OrderBy   order_bys[MAX_NUM];
 } Selects;
 
 typedef struct _InsertTuple {
@@ -225,10 +238,14 @@ void condition_destroy(Condition *condition);
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length);
 void attr_info_destroy(AttrInfo *attr_info);
 
+void order_attr_init(OrderBy *order_attr, RelAttr *attr, OrderType type);
+void order_attr_destroy(OrderBy *order_attr);
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
 void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
+void selects_append_order_by(Selects *selects, OrderBy *order_by);
 void selects_destroy(Selects *selects);
 
 void insert_tuple_init(InsertTuple *tuple, Value values[], size_t value_num);

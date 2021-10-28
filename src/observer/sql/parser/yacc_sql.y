@@ -116,6 +116,9 @@ ParserContext *get_context(yyscan_t scanner)
         MIN
         INNER
         JOIN
+        ORDER
+        BY
+        ASC
 
 %union {
   struct _Attr *attr;
@@ -142,6 +145,7 @@ ParserContext *get_context(yyscan_t scanner)
 %type <value1> value;
 %type <number> number;
 %type <number> aggregation
+%type <number> order_type
 
 %%
 
@@ -382,7 +386,7 @@ update:			/*  update 语句的语法解析树*/
         }
     ;
 select:				/*  select 语句的语法解析树*/
-    SELECT select_attr FROM ID rel_list where SEMICOLON
+    SELECT select_attr FROM ID rel_list where order SEMICOLON
         {
             // CONTEXT->ssql->sstr.selection.relations[CONTEXT->from_length++]=$4;
             selects_append_relation(&CONTEXT->ssql->sstr.selection, $4);
@@ -422,6 +426,47 @@ select:				/*  select 语句的语法解析树*/
         CONTEXT->select_length=0;
         CONTEXT->value_length = 0;
     };
+
+order:
+    /* empty */
+    | ORDER BY ID order_type order_attr_list {
+        RelAttr attr;
+        relation_attr_init(&attr, NULL, $3);
+        OrderBy order_attr;
+        order_attr_init(&order_attr, &attr, $4);
+        selects_append_order_by(&CONTEXT->ssql->sstr.selection, &order_attr);
+    }
+    | ORDER BY ID DOT ID order_type order_attr_list {
+        RelAttr attr;
+        relation_attr_init(&attr, $3, $5);
+        OrderBy order_attr;
+        order_attr_init(&order_attr, &attr, $6);
+        selects_append_order_by(&CONTEXT->ssql->sstr.selection, &order_attr);
+    }
+    ;
+
+order_attr_list:
+    /* empty */
+    | COMMA ID order_type order_attr_list {
+        RelAttr attr;
+        relation_attr_init(&attr, NULL, $2);
+        OrderBy order_attr;
+        order_attr_init(&order_attr, &attr, $3);
+        selects_append_order_by(&CONTEXT->ssql->sstr.selection, &order_attr);
+    }
+    | COMMA ID DOT ID order_type order_attr_list {
+        RelAttr attr;
+        relation_attr_init(&attr, $2, $4);
+        OrderBy order_attr;
+        order_attr_init(&order_attr, &attr, $5);
+        selects_append_order_by(&CONTEXT->ssql->sstr.selection, &order_attr);
+    }
+    ;
+
+order_type:
+    /* empty */ { $$ = AscOrder; }
+    | ASC { $$ = AscOrder; }
+    | DESC { $$ = DescOrder; };
 
 join_list:
     /* empty */
