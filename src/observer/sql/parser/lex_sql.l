@@ -78,6 +78,8 @@ QUOTE            [\'\"]
 [Mm][Aa][Xx]                           RETURN_TOKEN(MAX);
 [Mm][Ii][Nn]                           RETURN_TOKEN(MIN);
 [Uu][Nn][Ii][Qq][Uu][Ee]                 RETURN_TOKEN(UNIQUE);
+[Ii][Nn][Nn][Ee][Rr]                    RETURN_TOKEN(INNER);
+[Jj][Oo][Ii][Nn]                        RETURN_TOKEN(JOIN);
 {ID}							                       yylval->string=strdup(yytext); RETURN_TOKEN(ID);
 "("								                       RETURN_TOKEN(LBRACE);
 ")"								                       RETURN_TOKEN(RBRACE);
