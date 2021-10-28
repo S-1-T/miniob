@@ -114,6 +114,8 @@ ParserContext *get_context(yyscan_t scanner)
         AVG
         MAX
         MIN
+        INNER
+        JOIN
 
 %union {
   struct _Attr *attr;
@@ -396,7 +398,44 @@ select:				/*  select 语句的语法解析树*/
             CONTEXT->select_length=0;
             CONTEXT->value_length = 0;
     }
-    ;
+    | SELECT select_attr FROM ID INNER JOIN ID ON ID DOT ID EQ ID DOT ID join_list where SEMICOLON
+    {
+        // CONTEXT->ssql->sstr.selection.relations[CONTEXT->from_length++]=$4;
+        selects_append_relation(&CONTEXT->ssql->sstr.selection, $7);
+        selects_append_relation(&CONTEXT->ssql->sstr.selection, $4);
+        // 构造相等的条件
+        RelAttr left_attr;
+        relation_attr_init(&left_attr, $9, $11);
+        RelAttr right_attr;
+        relation_attr_init(&right_attr, $13, $15);
+        Condition condition;
+        condition_init(&condition, EQUAL_TO, 1, &left_attr, NULL, 1, &right_attr, NULL);
+        CONTEXT->conditions[CONTEXT->condition_length++] = condition;
+
+        selects_append_conditions(&CONTEXT->ssql->sstr.selection, CONTEXT->conditions, CONTEXT->condition_length);
+        CONTEXT->ssql->flag=SCF_SELECT;//"select";
+        // CONTEXT->ssql->sstr.selection.attr_num = CONTEXT->select_length;
+
+        //临时变量清零
+        CONTEXT->condition_length=0;
+        CONTEXT->from_length=0;
+        CONTEXT->select_length=0;
+        CONTEXT->value_length = 0;
+    };
+
+join_list:
+    /* empty */
+    | INNER JOIN ID ON ID DOT ID EQ ID DOT ID join_list
+    {
+        selects_append_relation(&CONTEXT->ssql->sstr.selection, $3);
+        RelAttr left_attr;
+        relation_attr_init(&left_attr, $5, $7);
+        RelAttr right_attr;
+        relation_attr_init(&right_attr, $9, $11);
+        Condition condition;
+        condition_init(&condition, EQUAL_TO, 1, &left_attr, NULL, 1, &right_attr, NULL);
+        CONTEXT->conditions[CONTEXT->condition_length++] = condition;
+    };
 
 select_attr:
     STAR {
