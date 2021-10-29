@@ -48,6 +48,7 @@ inline const char* aggregation_type_to_string(AggregationType type) {
         case MinAggregate:   return "min";
         case MaxAggregate:   return "max";
     }
+    return "none";
 }
 
 //属性结构体
