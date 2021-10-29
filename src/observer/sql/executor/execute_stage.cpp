@@ -37,7 +37,7 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, SelectExeNode &select_node);
+RC create_selection_executor(Trx *trx, Selects &selects, Table *table, SelectExeNode &select_node);
 
 RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Condition *conditions, TupleSet &output);
 
@@ -358,6 +358,36 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
   }
+  for (size_t i = 0; i < selects.order_by_num; i++) {
+    const OrderBy &order_by = selects.order_bys[i];
+    const RelAttr &attr = order_by.attr;
+    if (attr.relation_name != nullptr) {
+      Table *t = nullptr;
+      for (size_t j = 0; j < selects.relation_num; j++) {
+        if (0 == strcmp(attr.relation_name, selects.relations[j])) {
+          t = tables[j];
+          break;
+        }
+      }
+      if (t == nullptr) {
+        // 表不存在
+        LOG_WARN("Table [%s] is not in selection's relations", attr.relation_name);
+        return RC::MISMATCH;
+      }
+      if (nullptr == t->table_meta().field(attr.attribute_name)) {
+        // 字段不存在
+        LOG_WARN("No such field [%s] in table [%s]", attr.attribute_name, attr.relation_name);
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    } else {
+      // 检测二义性
+      size_t idx = 0;
+      RC rc = check_ambiguous(selects.relation_num, tables, attr.attribute_name, idx);
+      if (RC::SUCCESS != rc) {
+        return rc;
+      }
+    }
+  }
   return RC::SUCCESS;
 }
 
@@ -368,7 +398,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   RC rc = RC::SUCCESS;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
-  const Selects &selects = sql->sstr.selection;
+  Selects &selects = sql->sstr.selection;
   Table *tables[selects.relation_num];
   TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
   rc = selects_meta_check(db, selects, tables, output_schema);
@@ -432,11 +462,21 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     if (rc != RC::SUCCESS && rc != RC::MISMATCH) {
       return rc;
     }
+    if (selects.order_by_num > 0) {
+      // 需要排序
+      output.sort(selects.order_bys, selects.order_by_num);
+    }
     output.set_schema(output_schema);
     output.print(ss, true);
   } else {
+    TupleSet &output = tuple_sets.front();
+    if (selects.order_by_num > 0) {
+      // 需要排序
+      output.sort(selects.order_bys, selects.order_by_num);
+    }
     // 当前只查询一张表，直接返回结果即可
-    tuple_sets.front().print(ss, false);
+    output.set_schema(output_schema);
+    output.print(ss, false);
   }
 
   for (SelectExeNode *&tmp_node: select_nodes) {
@@ -561,7 +601,7 @@ static RC schema_add_field(Table *table, const char *field_name, AggregationType
 }
 
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
-RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, SelectExeNode &select_node) {
+RC create_selection_executor(Trx *trx, Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   const char *table_name = table->name();
@@ -628,10 +668,19 @@ RC create_selection_executor(Trx *trx, const Selects &selects, Table *table, Sel
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
       condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
+      // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
     }
   }
-
+  // 加入 ORDER BY 需要的字段
+  for (int i = selects.order_by_num - 1; i >= 0; i--) {
+    OrderBy &order_by = selects.order_bys[i];
+    RelAttr &attr = order_by.attr;
+    if (attr.relation_name == nullptr) {
+      attr.relation_name = strdup(table->name());
+    }
+    schema_add_field(table, attr.attribute_name, AggregationType::None, schema);
+  }
   return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }

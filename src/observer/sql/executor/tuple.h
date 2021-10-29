@@ -31,6 +31,7 @@ class Tuple {
   ~Tuple();
 
   Tuple(Tuple &&other) noexcept;
+  Tuple &operator=(Tuple &other) noexcept;
   Tuple &operator=(Tuple &&other) noexcept;
 
   void add(TupleValue *value);
@@ -130,6 +131,7 @@ class TupleSet {
   const Tuple &get(int index) const;
   const std::vector<Tuple> &tuples() const;
 
+  void sort(const OrderBy orders[], size_t order_num);
   void print(std::ostream &os, bool multi_table) const;
 public:
   const TupleSchema &schema() const {

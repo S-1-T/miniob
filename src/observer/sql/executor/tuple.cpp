@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <ctime>
 #include <iostream>
+#include <algorithm>
 
 #include "common/log/log.h"
 #include "storage/common/table.h"
@@ -34,6 +35,20 @@ Tuple &Tuple::operator=(Tuple &&other) noexcept {
 
   values_.clear();
   values_.swap(other.values_);
+
+  return *this;
+}
+
+Tuple &Tuple::operator=(Tuple &other) noexcept {
+  if (&other == this) {
+    return *this;
+  }
+
+  values_.clear();
+  auto &values = other.values();
+  for (auto v: values) {
+    values_.emplace_back(v);
+  }
   return *this;
 }
 
@@ -193,6 +208,35 @@ void TupleSet::clear() {
   schema_.clear();
 }
 
+void TupleSet::sort(const OrderBy orders[], size_t order_num) {
+  std::sort(
+      tuples_.begin(),
+      tuples_.end(),
+      [&](Tuple &t1, Tuple &t2) {
+        if (t1.size() == 0 || t2.size() == 0) {
+          return false;
+        }
+        for (int i = order_num - 1; i >= 0; i--) {
+          const OrderBy &order = orders[i];
+          const RelAttr &attr = order.attr;
+          int idx = schema_.index_of_field(attr.relation_name, attr.attribute_name);
+          const TupleValue &t1_v = t1.get(idx);
+          const TupleValue &t2_v = t2.get(idx);
+          int cmp_result = t1_v.compare(t2_v);
+          if (cmp_result == 0) {
+            continue;
+          }
+          if (order.type == OrderType::AscOrder) {
+            return cmp_result < 0;
+          } else {
+            return cmp_result > 0;
+          }
+        }
+        return true;
+      }
+  );
+}
+
 void TupleSet::print(std::ostream &os, bool multi_table) const {
   if (schema_.fields().empty()) {
     LOG_WARN("Got empty schema");
@@ -203,14 +247,13 @@ void TupleSet::print(std::ostream &os, bool multi_table) const {
 
   for (const Tuple &item : tuples_) {
     const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
-    for (std::vector<std::shared_ptr<TupleValue>>::const_iterator
-             iter = values.begin(),
-             end = --values.end();
-         iter != end; ++iter) {
-      (*iter)->to_string(os);
+    int output_size = schema_.fields().size();
+    for (int i = 0; i < output_size - 1; i++) {
+      const auto &value = values[i];
+      value->to_string(os);
       os << " | ";
     }
-    values.back()->to_string(os);
+    values[output_size - 1]->to_string(os);
     os << std::endl;
   }
 }
