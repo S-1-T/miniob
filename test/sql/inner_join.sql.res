@@ -4,9 +4,9 @@ FAILURE
 SUCCESS
 SUCCESS
 SUCCESS
-SUCCESS. total 6 line(s) handled and 6 record(s) loaded, total cost 6.9797e-05 second(s)
-SUCCESS. total 6 line(s) handled and 6 record(s) loaded, total cost 2.5767e-05 second(s)
-SUCCESS. total 8 line(s) handled and 8 record(s) loaded, total cost 0.00175301 second(s)
+SUCCESS. total 6 line(s) handled and 6 record(s) loaded, total cost 2.956e-05 second(s)
+SUCCESS. total 6 line(s) handled and 6 record(s) loaded, total cost 2.7431e-05 second(s)
+SUCCESS. total 8 line(s) handled and 8 record(s) loaded, total cost 0.0016722 second(s)
 tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c
 1 | 1.8 | a | 1 | 1.2 | e
 1 | 1.8 | a | 1 | 2.5 | a
@@ -47,6 +47,14 @@ tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c | tmp_t3.i | tmp
 tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c | tmp_t3.i | tmp_t3.d
 2 | 3.1 | b | 2 | 8.8 | a | 2 | 1999-04-27
 2 | 3.1 | b | 2 | 3.4 | c | 2 | 1999-04-27
+tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c
+1 | 1.8 | a | 1 | 1.2 | e
+tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c
+1 | 1.8 | a | 1 | 2.5 | a
+2 | 3.1 | b | 2 | 8.8 | a
+2 | 3.1 | b | 2 | 3.4 | c
+tmp_t1.i | tmp_t1.f | tmp_t1.c | tmp_t2.i | tmp_t2.f | tmp_t2.c
+1 | 1.8 | a | 1 | 2.5 | a
 SUCCESS
 SUCCESS
 SUCCESS
