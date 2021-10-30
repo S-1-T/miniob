@@ -77,6 +77,7 @@ typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES } AttrType;
 typedef struct _Value {
   AttrType type;  // type of value
   void *data;     // value
+  char is_null;
 } Value;
 
 typedef struct _Condition {
@@ -140,6 +141,7 @@ typedef struct {
   char *name;     // Attribute name
   AttrType type;  // Type of attribute
   size_t length;  // Length of attribute
+  char nullable;
 } AttrInfo;
 
 // struct of craete_table
@@ -159,7 +161,7 @@ typedef struct {
   char *index_name;      // Index name
   char *relation_name;   // Relation name
   char *attribute_name;  // Attribute name
-  short is_unique;
+  char is_unique;
 } CreateIndex;
 
 // struct of  drop_index
@@ -230,13 +232,14 @@ void relation_attr_destroy(RelAttr *relation_attr);
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
+void value_init_null(Value *value);
 void value_destroy(Value *value);
 
 void condition_init(Condition *condition, CompOp comp, int left_is_attr, RelAttr *left_attr, Value *left_value,
     int right_is_attr, RelAttr *right_attr, Value *right_value);
 void condition_destroy(Condition *condition);
 
-void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length);
+void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, char nullable);
 void attr_info_destroy(AttrInfo *attr_info);
 
 void order_attr_init(OrderBy *order_attr, RelAttr *attr, OrderType type);
@@ -272,7 +275,7 @@ void drop_table_init(DropTable *drop_table, const char *relation_name);
 void drop_table_destroy(DropTable *drop_table);
 
 void create_index_init(
-    CreateIndex *create_index, const char *index_name, const char *relation_name, const char *attr_name, short is_unique);
+    CreateIndex *create_index, const char *index_name, const char *relation_name, const char *attr_name, char is_unique);
 void create_index_destroy(CreateIndex *create_index);
 
 void drop_index_init(DropIndex *drop_index, const char *index_name, const char *relation_name);

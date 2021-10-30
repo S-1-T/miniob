@@ -23,9 +23,17 @@ bool is_type_convertable(AttrType t1, AttrType t2) {
   return type_convertable[t1][t2];
 }
 
-RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len) {
+RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null) {
   if (!type_convertable[src_type][dest_type]) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+  // 数据部分长度为 len - 1
+  // 剩下 1 字节表示是否为 NULL
+  len = len - 1;
+  if (is_null) {
+    memset(dest_data, 0, len);
+    *((char *)dest_data + len) = (char)true;
+    return RC::SUCCESS;
   }
   switch (dest_type) {
     // INTS FLOATS 考虑隐式转换
@@ -68,5 +76,7 @@ RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *des
     default:
       memcpy(dest_data, src_data, len);
   }
+  // 最后一个字节表示是否是 null
+  *((char *)dest_data + len) = (char)false;
   return RC::SUCCESS;
 }

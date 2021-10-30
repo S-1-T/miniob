@@ -65,21 +65,32 @@ void relation_attr_destroy(RelAttr *relation_attr) {
 void value_init_integer(Value *value, int v) {
   value->type = INTS;
   value->data = malloc(sizeof(v));
+  value->is_null = false;
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_float(Value *value, float v) {
   value->type = FLOATS;
   value->data = malloc(sizeof(v));
+  value->is_null = false;
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_string(Value *value, const char *v) {
   value->type = CHARS;
+  value->is_null = false;
   value->data = strdup(v);
 }
+
+void value_init_null(Value *value) {
+  value->type = UNDEFINED;
+  value->is_null = true;
+  value->data = nullptr;
+}
+
 void value_destroy(Value *value) {
   value->type = UNDEFINED;
   free(value->data);
   value->data = nullptr;
+  value->is_null = false;
 }
 
 void condition_init(Condition *condition, CompOp comp, 
@@ -113,10 +124,11 @@ void condition_destroy(Condition *condition) {
   }
 }
 
-void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length) {
+void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, char nullable) {
   attr_info->name = strdup(name);
   attr_info->type = type;
   attr_info->length = length;
+  attr_info->nullable = nullable;
 }
 void attr_info_destroy(AttrInfo *attr_info) {
   free(attr_info->name);
@@ -283,7 +295,7 @@ void drop_table_destroy(DropTable *drop_table) {
 }
 
 void create_index_init(CreateIndex *create_index, const char *index_name, 
-                       const char *relation_name, const char *attr_name, short is_unique) {
+                       const char *relation_name, const char *attr_name, char is_unique) {
   create_index->index_name = strdup(index_name);
   create_index->relation_name = strdup(relation_name);
   create_index->attribute_name = strdup(attr_name);
