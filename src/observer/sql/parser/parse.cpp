@@ -86,6 +86,11 @@ void value_init_null(Value *value) {
   value->data = nullptr;
 }
 
+void value_init_select(Value *value, Selects v){
+  value->type = SELECTS;
+  value->data = malloc(sizeof(v));
+  memcpy(value->data, &v, sizeof(v));
+}
 void value_destroy(Value *value) {
   value->type = UNDEFINED;
   free(value->data);
@@ -106,7 +111,8 @@ void condition_init(Condition *condition, CompOp comp,
 
   condition->right_is_attr = right_is_attr;
   if (right_is_attr) {
-    condition->right_attr = *right_attr;
+    if (right_is_attr == 2)   condition->right_value = *right_value;
+    else condition->right_attr = *right_attr;
   } else {
     condition->right_value = *right_value;
   }
