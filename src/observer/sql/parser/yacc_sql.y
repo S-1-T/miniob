@@ -717,6 +717,84 @@ condition:
 	    //处理子查询内存
 	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
     }
+    |ID DOT ID comOp LBRACE select_begin select_attr FROM ID rel_list where RBRACE
+    {
+            selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $9);
+    	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
+    	    CONTEXT->condition_length[CONTEXT->select_length]);
+
+
+    	    //临时变量清零
+    	    CONTEXT->condition_length[CONTEXT->select_length]=0;
+    	    CONTEXT->from_length[CONTEXT->select_length]=0;
+    	    CONTEXT->value_length[CONTEXT->select_length] = 0;
+    	    CONTEXT->select_length--;
+
+    	    RelAttr left_attr;
+                relation_attr_init(&left_attr, $1, $3);
+    	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
+    	    	CONTEXT->selects[CONTEXT->select_length+1]);
+    	    Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
+
+    	    Condition condition;
+    	    condition_init(&condition, CONTEXT->comp, 1, &left_attr, NULL, 2, NULL, right_value);
+    	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+
+    	    //处理子查询内存
+    	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    }
+    |LBRACE select_begin select_attr FROM ID rel_list where RBRACE comOp ID
+    {
+    	    selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $5);
+	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
+	    CONTEXT->condition_length[CONTEXT->select_length]);
+
+
+	    //临时变量清零
+	    CONTEXT->condition_length[CONTEXT->select_length]=0;
+	    CONTEXT->from_length[CONTEXT->select_length]=0;
+	    CONTEXT->value_length[CONTEXT->select_length] = 0;
+	    CONTEXT->select_length--;
+
+	    RelAttr right_attr;
+		relation_attr_init(&right_attr, NULL, $10);
+	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
+		CONTEXT->selects[CONTEXT->select_length+1]);
+	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
+
+	    Condition condition;
+	    condition_init(&condition, CONTEXT->comp, 2, NULL, left_value, 1, &right_attr, NULL);
+	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+
+	    //处理子查询内存
+	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    }
+    |LBRACE select_begin select_attr FROM ID rel_list where RBRACE comOp ID DOT ID
+    {
+            selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $5);
+    	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
+    	    CONTEXT->condition_length[CONTEXT->select_length]);
+
+
+    	    //临时变量清零
+    	    CONTEXT->condition_length[CONTEXT->select_length]=0;
+    	    CONTEXT->from_length[CONTEXT->select_length]=0;
+    	    CONTEXT->value_length[CONTEXT->select_length] = 0;
+    	    CONTEXT->select_length--;
+
+    	    RelAttr right_attr;
+    		relation_attr_init(&right_attr, $10, $12);
+    	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
+    		CONTEXT->selects[CONTEXT->select_length+1]);
+    	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
+
+    	    Condition condition;
+    	    condition_init(&condition, CONTEXT->comp, 2, NULL, left_value, 1, &right_attr, NULL);
+    	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+
+    	    //处理子查询内存
+    	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    }
     ;
 
 comOp:

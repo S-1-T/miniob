@@ -47,6 +47,7 @@ class TupleValue {
     }
     auto cmp_result = compare(other);
     switch (comp) {
+      case IN_OP:
       case EQUAL_TO:
         return 0 == cmp_result;
       case LESS_EQUAL:

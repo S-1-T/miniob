@@ -37,8 +37,6 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-RC create_selection_executor(Trx *trx, Selects &selects, Table *table, SelectExeNode &select_node);
-
 RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Condition *conditions, TupleSet &output);
 
 RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions, std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index);
@@ -312,14 +310,14 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
     const char *right_table_name = condition.right_attr.relation_name;
     const char *left_attr_name = condition.left_attr.attribute_name;
     const char *right_attr_name = condition.right_attr.attribute_name;
-    bool left_is_attr = condition.left_is_attr;
-    bool right_is_attr = condition.right_is_attr;
+    int left_is_attr = condition.left_is_attr;
+    int right_is_attr = condition.right_is_attr;
     bool left_find = false;
     bool right_find = false;
     size_t left_table_idx = 0;
     size_t right_table_idx = 0;
     for (size_t j = 0; j < selects.relation_num; j++) {
-      if (left_is_attr) {
+      if (1 == left_is_attr) {
         if (left_table_name != nullptr && 0 == strcmp(left_table_name, selects.relations[j])) {
           left_find = true;
           left_table_idx = j;
@@ -331,7 +329,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
           }
         }
       }
-      if (right_is_attr) {
+      if (1 == right_is_attr) {
         if (right_table_name != nullptr && 0 == strcmp(right_table_name, selects.relations[j])) {
           right_find = true;
           right_table_idx = j;
@@ -344,11 +342,11 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
         }
       }
     }
-    if (left_is_attr && left_table_name != nullptr && !left_find) {
+    if (1 == left_is_attr && left_table_name != nullptr && !left_find) {
       LOG_WARN("left attr's relation [%s] will not be scanned", left_table_name);
       return RC::MISMATCH;
     }
-    if (right_is_attr && right_table_name != nullptr && !right_find) {
+    if (1 == right_is_attr && right_table_name != nullptr && !right_find) {
       LOG_WARN("right attr's relation [%s] will not be scanned", right_table_name);
       return RC::MISMATCH;
     }
@@ -416,7 +414,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
     SelectExeNode *select_node = new SelectExeNode;
-    rc = create_selection_executor(trx, selects, tables[i], *select_node);
+    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node);
     if (rc != RC::SUCCESS) {
       delete select_node;
       for (SelectExeNode *&tmp_node: select_nodes) {
@@ -487,8 +485,106 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   for (SelectExeNode *&tmp_node: select_nodes) {
     delete tmp_node;
   }
+
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    if (selects.conditions[i].left_is_attr == 2 ) {
+      delete (TupleSet*)selects.conditions[i].left_value.data;
+    }
+    if (selects.conditions[i].right_is_attr == 2 ) {
+      delete (TupleSet*)selects.conditions[i].right_value.data;
+    }
+  }
+
   session_event->set_response(ss.str());
   end_trx_if_need(session, trx, true);
+  return rc;
+}
+
+RC ExecuteStage::do_subSelect(const char *db, Selects &selects, SessionEvent *session_event, TupleSet &tupleSet) {
+
+  RC rc = RC::SUCCESS;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  Table *tables[selects.relation_num];
+  TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
+  rc = selects_meta_check(db, selects, tables, output_schema);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Selection meta test failed");
+    return rc;
+  }
+
+  // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
+  std::vector<SelectExeNode *> select_nodes;
+  for (size_t i = 0; i < selects.relation_num; i++) {
+    SelectExeNode *select_node = new SelectExeNode;
+    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node);
+    if (rc != RC::SUCCESS) {
+      delete select_node;
+      for (SelectExeNode *&tmp_node: select_nodes) {
+        delete tmp_node;
+      }
+      return rc;
+    }
+    select_nodes.push_back(select_node);
+  }
+  if (select_nodes.empty()) {
+    LOG_ERROR("No table given");
+    return RC::SQL_SYNTAX;
+  }
+
+  std::vector<TupleSet> tuple_sets;
+  for (SelectExeNode *&node: select_nodes) {
+    TupleSet tuple_set;
+    rc = node->execute(tuple_set);
+    if (rc != RC::SUCCESS) {
+      for (SelectExeNode *&tmp_node: select_nodes) {
+        delete tmp_node;
+      }
+      return rc;
+    } else {
+      tuple_sets.push_back(std::move(tuple_set));
+    }
+  }
+
+  std::stringstream ss;
+  if (tuple_sets.size() > 1) {
+    // 本次查询了多张表，需要做join操作
+    // 提取两边都是 attr 且表不一样的 condition
+    int remain_condition_num = 0;
+    Condition remain_conditions[MAX_NUM];
+    for (int i = 0; i < selects.condition_num; i++) {
+      const Condition &condition = selects.conditions[i];
+      if (condition.left_is_attr && condition.right_is_attr &&
+          condition.left_attr.relation_name != condition.right_attr.relation_name) {
+        remain_conditions[remain_condition_num++] = condition;
+      }
+    }
+    // 将笛卡尔积整合到一个 tuple set 中打印输出。
+    TupleSet output(output_schema);
+    auto rc = do_cartesian(tuple_sets, remain_condition_num, remain_conditions, output);
+    if (rc != RC::SUCCESS && rc != RC::MISMATCH) {
+      return rc;
+    }
+    output.set_schema(output_schema);
+    tupleSet = std::move(output);
+  } else {
+    // 当前只查询一张表，直接返回结果即可
+    tupleSet = std::move(tuple_sets.front());
+  }
+
+  for (SelectExeNode *&tmp_node: select_nodes) {
+    delete tmp_node;
+  }
+
+  for (size_t i = 0; i<selects.condition_num; i++) {
+    if (selects.conditions[i].left_is_attr == 2) {
+      delete (TupleSet*)selects.conditions[i].left_value.data;
+    }
+    if (selects.conditions[i].right_is_attr == 2) {
+      delete (TupleSet*)selects.conditions[i].right_value.data;
+    }
+  }
+
   return rc;
 }
 
@@ -606,7 +702,8 @@ static RC schema_add_field(Table *table, const char *field_name, AggregationType
 }
 
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
-RC create_selection_executor(Trx *trx, Selects &selects, Table *table, SelectExeNode &select_node) {
+RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEvent *session_event,
+                                           Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
   const char *table_name = table->name();
@@ -676,6 +773,44 @@ RC create_selection_executor(Trx *trx, Selects &selects, Table *table, SelectExe
       // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
+    } else if (condition.left_is_attr == 2 || condition.right_is_attr == 2) {
+      TupleSet* tupleSet = new TupleSet;
+      Selects sub_select;
+      Value* value = nullptr;
+
+      if (condition.left_is_attr == 2) {
+        sub_select = *reinterpret_cast<Selects*>(condition.left_value.data);
+        value = &const_cast<Condition&>(condition).left_value;
+      } else {
+        sub_select = *reinterpret_cast<Selects*>(condition.right_value.data);
+        value = &const_cast<Condition&>(condition).right_value;
+      }
+
+      RC rc = do_subSelect(db, sub_select, session_event, *tupleSet);
+      if (rc != RC::SUCCESS) {
+        delete tupleSet;
+        for (DefaultConditionFilter * &filter : condition_filters) {
+          delete filter;
+        }
+        return rc;
+      }
+      value_destroy(value);
+
+      value->type = TUPLESET;
+      value->data = malloc(sizeof(TupleSet*));
+      value->data = tupleSet;
+
+      DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+      rc = condition_filter->init(*table, condition);
+      if (rc != RC::SUCCESS) {
+        delete condition_filter;
+        for (DefaultConditionFilter * &filter : condition_filters) {
+          delete filter;
+        }
+        return rc;
+      }
+
+      condition_filters.push_back(condition_filter);
     }
   }
   // 加入 ORDER BY 需要的字段

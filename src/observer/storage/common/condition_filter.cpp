@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include <cmath>
+#include <sql/executor/tuple.h>
 
 #include "condition_filter.h"
 
@@ -41,7 +42,7 @@ DefaultConditionFilter::~DefaultConditionFilter() {}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
                                 AttrType attr_type, CompOp comp_op) {
-  if (attr_type < CHARS || attr_type > NULL_) {
+  if (attr_type < CHARS || attr_type > TUPLESET) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d",
               attr_type);
     return RC::INVALID_ARGUMENT;
@@ -67,6 +68,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
   AttrType type_left = UNDEFINED;
   AttrType type_right = UNDEFINED;
+  bool sub_query_legal = true;
 
   if (1 == condition.left_is_attr) {
     left.is_attr = true;
@@ -87,14 +89,25 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   } else {
     left.is_attr = false;
     left.value = condition.left_value.data;  // 校验type 或者转换类型
-    type_left = condition.left_value.type;
+
+    if (0 == condition.left_is_attr) {
+      type_left = condition.left_value.type;
+      left.attr_type = type_left;
+    } else {
+      TupleSet *tupleSet = static_cast<TupleSet *>(condition.left_value.data);
+      type_left = tupleSet->get_schema().field(0).type();
+      left.attr_type = TUPLESET;
+
+      if (condition.comp != IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
+        sub_query_legal = false;
+      }
+    }
 
     left.attr_length = 0;
     left.attr_offset = 0;
     left.attr_type = type_left;
     left.is_null = condition.left_value.is_null;
   }
-
   if (1 == condition.right_is_attr) {
     right.is_attr = true;
     const FieldMeta *field_right =
@@ -113,16 +126,27 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
   } else {
     right.is_attr = false;
     right.value = condition.right_value.data;
-    type_right = condition.right_value.type;
+
+    if (0 == condition.right_is_attr) {
+      type_right = condition.right_value.type;
+      right.attr_type = type_right;
+    } else {
+      TupleSet *tupleSet = static_cast<TupleSet *>(condition.right_value.data);
+      type_right = tupleSet->get_schema().field(0).type();
+      right.attr_type = TUPLESET;
+
+      if (condition.comp != IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
+        sub_query_legal = false;
+      }
+    }
 
     right.attr_length = 0;
     right.attr_offset = 0;
     right.attr_type = type_right;
     right.is_null = condition.right_value.is_null;
   }
-
   // 校验和转换
-  if (!is_type_convertable(type_left, type_right)) {
+  if (!is_type_convertable(type_left, type_right) || !sub_query_legal) {
     LOG_WARN(
         "Two values' types incompatible, left: %d, right: %d",
         type_left, type_right);
@@ -195,6 +219,75 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
         return false;
     }
   }
+
+  int cmp_result = 0;
+  if (left_.attr_type != TUPLESET && right_.attr_type != TUPLESET) {
+    cmp_result = get_cmp_result(left_value, right_value);
+  } else {
+    if (right_.attr_type == TUPLESET) {
+      TupleSet* tupleSet = reinterpret_cast<TupleSet*>(right_value);
+      TupleValue* left_data = getTuple(left_value);
+      for (int i=0; i<tupleSet->size(); i++) {
+        if (left_data->compare_with_op(tupleSet->get(i).get(0), comp_op_)) {
+          return true;
+        }
+      }
+    } else {
+      TupleSet* tupleSet = reinterpret_cast<TupleSet*>(left_value);
+      TupleValue* right_data = getTuple(right_value);
+      for (int i=0; i<tupleSet->size(); i++) {
+        if (tupleSet->get(i).get(0).compare_with_op(*right_data, comp_op_)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  switch (comp_op_) {
+    case EQUAL_TO:
+      return 0 == cmp_result;
+    case LESS_EQUAL:
+      return cmp_result <= 0;
+    case NOT_EQUAL:
+      return cmp_result != 0;
+    case LESS_THAN:
+      return cmp_result < 0;
+    case GREAT_EQUAL:
+      return cmp_result >= 0;
+    case GREAT_THAN:
+      return cmp_result > 0;
+    case IN_OP:
+      return cmp_result > 0;
+    default:
+      break;
+  }
+
+  LOG_PANIC("Never should print this.");
+  return cmp_result;  // should not go here
+}
+
+TupleValue *DefaultConditionFilter::getTuple(char* left_value) const{
+  switch (attr_type_) {
+    case CHARS: {  // 字符串都是定长的，直接比较
+      return dynamic_cast<TupleValue *>(new StringValue(left_value));
+    } break;
+    case INTS: {
+      return dynamic_cast<TupleValue *>(new IntValue(*(int *) left_value));
+    } break;
+    case FLOATS: {
+      return dynamic_cast<TupleValue *>(new FloatValue(*(float *)left_value));
+    } break;
+    case DATES: {
+      return dynamic_cast<TupleValue *>(new DateValue(*(time_t *)left_value));
+    } break;
+    default: {
+    }
+  }
+
+  return nullptr;
+}
+
+int DefaultConditionFilter::get_cmp_result(char *left_value, char *right_value) const {
   int cmp_result = 0;
   // 这里的 attr_type_ 是 left_value 的类型
   switch (attr_type_) {
@@ -249,27 +342,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
     default: {
     }
   }
-
-  switch (comp_op_) {
-    case EQUAL_TO:
-      return 0 == cmp_result;
-    case LESS_EQUAL:
-      return cmp_result <= 0;
-    case NOT_EQUAL:
-      return cmp_result != 0;
-    case LESS_THAN:
-      return cmp_result < 0;
-    case GREAT_EQUAL:
-      return cmp_result >= 0;
-    case GREAT_THAN:
-      return cmp_result > 0;
-
-    default:
-      break;
-  }
-
-  LOG_PANIC("Never should print this.");
-  return cmp_result;  // should not go here
+  return cmp_result;
 }
 
 CompositeConditionFilter::~CompositeConditionFilter() {
