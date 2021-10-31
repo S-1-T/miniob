@@ -119,6 +119,7 @@ ParserContext *get_context(yyscan_t scanner)
         ORDER
         BY
         ASC
+        IS_
         NOT
         NULL_T
         NULLABLE
@@ -742,6 +743,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+    | IS_ { CONTEXT->comp = IS; }
+    | IS_ NOT { CONTEXT->comp = IS_NOT; }
     ;
 
 aggregation:

@@ -184,9 +184,16 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
     right_value = (char *)right_.value;
     right_is_null = right_.is_null;
   }
-  // NULL 和任何值相比都是 false
+  // NULL 特殊处理
   if (left_is_null || right_is_null) {
-    return false;
+    switch (comp_op_) {
+      case IS:
+        return left_is_null == right_is_null;
+      case IS_NOT:
+        return left_is_null != right_is_null;
+      default:
+        return false;
+    }
   }
   int cmp_result = 0;
   // 这里的 attr_type_ 是 left_value 的类型

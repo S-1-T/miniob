@@ -34,9 +34,16 @@ class TupleValue {
   virtual void merge(const TupleValue &other) = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool compare_with_op(const TupleValue &other, CompOp comp) const {
-    // NULL 与任何值比较都是 false
+    // NULL 与任何值比较都是 false，除非是 IS 和 IS NOT
     if (is_null() || other.is_null()) {
-      return false;
+      switch (comp) {
+        case IS:
+          return is_null() == other.is_null();
+        case IS_NOT:
+          return is_null() != other.is_null();
+        default:
+          return false;
+      }
     }
     auto cmp_result = compare(other);
     switch (comp) {
@@ -55,7 +62,7 @@ class TupleValue {
       default:
         break;
     }
-    return cmp_result;
+    return cmp_result == 0;
   }
   virtual AttrType type() const = 0;
   virtual bool is_null() const = 0;
