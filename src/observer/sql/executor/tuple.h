@@ -36,10 +36,10 @@ class Tuple {
 
   void add(TupleValue *value);
   void add(const std::shared_ptr<TupleValue> &other);
-  void add(int value, AggregationType aggregation_type);
-  void add(float value, AggregationType aggregation_type);
-  void add(time_t value, AggregationType aggregation_type);
-  void add(const char *s, int len, AggregationType aggregation_type);
+  void add(int value, AggregationType aggregation_type, bool is_null);
+  void add(float value, AggregationType aggregation_type, bool is_null);
+  void add(time_t value, AggregationType aggregation_type, bool is_null);
+  void add(const char *s, int len, AggregationType aggregation_type, bool is_null);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;

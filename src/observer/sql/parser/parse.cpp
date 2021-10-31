@@ -81,7 +81,7 @@ void value_init_string(Value *value, const char *v) {
 }
 
 void value_init_null(Value *value) {
-  value->type = UNDEFINED;
+  value->type = NULL_;
   value->is_null = true;
   value->data = nullptr;
 }

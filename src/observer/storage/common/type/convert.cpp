@@ -11,12 +11,13 @@
 #include "storage/common/type/date.h"
 
 
-static const bool type_convertable[5][5] = {
-    {0, 0, 0, 0, 0}, /* UNDEFINE 与其他任何一种类型不可比较 */
-    {0, 1, 0, 0, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
-    {0, 0, 1, 1, 0}, /* INTS 可与 FLOATS 进行隐式转换 */
-    {0, 0, 1, 1, 0}, /* FLOATS 可与 INTS 进行隐式转换 */
-    {0, 1, 0, 0, 1} /* DATES 目前仅可与自身和 CHARS 比较 */
+static const bool type_convertable[6][6] = {
+    {0, 0, 0, 0, 0, 1}, /* UNDEFINE 与其他任何一种类型不可比较 */
+    {0, 1, 0, 0, 1, 1}, /* CHARS 目前仅可与自身和 DATES 比较 */
+    {0, 0, 1, 1, 0, 1}, /* INTS 可与 FLOATS 进行隐式转换 */
+    {0, 0, 1, 1, 0, 1}, /* FLOATS 可与 INTS 进行隐式转换 */
+    {0, 1, 0, 0, 1, 1}, /* DATES 目前仅可与自身和 CHARS 比较 */
+    {1, 1, 1, 1, 1, 1} /* NULL 可以和任何值比较，但是返回都是 false */
 };
 
 bool is_type_convertable(AttrType t1, AttrType t2) {
@@ -24,16 +25,17 @@ bool is_type_convertable(AttrType t1, AttrType t2) {
 }
 
 RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null) {
-  if (!type_convertable[src_type][dest_type]) {
-    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-  }
   // 数据部分长度为 len - 1
   // 剩下 1 字节表示是否为 NULL
+  // 读取的 NULL 并未获取到类型，所以得先判断
   len = len - 1;
   if (is_null) {
     memset(dest_data, 0, len);
     *((char *)dest_data + len) = (char)true;
     return RC::SUCCESS;
+  }
+  if (!type_convertable[src_type][dest_type]) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
   switch (dest_type) {
     // INTS FLOATS 考虑隐式转换

@@ -41,7 +41,7 @@ DefaultConditionFilter::~DefaultConditionFilter() {}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
                                 AttrType attr_type, CompOp comp_op) {
-  if (attr_type < CHARS || attr_type > DATES) {
+  if (attr_type < CHARS || attr_type > NULL_) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d",
               attr_type);
     return RC::INVALID_ARGUMENT;
@@ -92,6 +92,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     left.attr_length = 0;
     left.attr_offset = 0;
     left.attr_type = type_left;
+    left.is_null = condition.left_value.is_null;
   }
 
   if (1 == condition.right_is_attr) {
@@ -117,6 +118,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
     right.attr_length = 0;
     right.attr_offset = 0;
     right.attr_type = type_right;
+    right.is_null = condition.right_value.is_null;
   }
 
   // 校验和转换
@@ -165,19 +167,27 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 bool DefaultConditionFilter::filter(const Record &rec) const {
   char *left_value = nullptr;
   char *right_value = nullptr;
-
+  bool left_is_null = false;
+  bool right_is_null = false;
   if (left_.is_attr) {  // value
     left_value = (char *)(rec.data + left_.attr_offset);
+    left_is_null = (bool)(left_value[left_.attr_length - 1]);
   } else {
     left_value = (char *)left_.value;
+    left_is_null = left_.is_null;
   }
 
   if (right_.is_attr) {
     right_value = (char *)(rec.data + right_.attr_offset);
+    right_is_null = (bool)(right_value[right_.attr_length - 1]);
   } else {
     right_value = (char *)right_.value;
+    right_is_null = right_.is_null;
   }
-
+  // NULL 和任何值相比都是 false
+  if (left_is_null || right_is_null) {
+    return false;
+  }
   int cmp_result = 0;
   // 这里的 attr_type_ 是 left_value 的类型
   switch (attr_type_) {

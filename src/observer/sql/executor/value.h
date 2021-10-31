@@ -34,6 +34,10 @@ class TupleValue {
   virtual void merge(const TupleValue &other) = 0;
   virtual int compare(const TupleValue &other) const = 0;
   virtual bool compare_with_op(const TupleValue &other, CompOp comp) const {
+    // NULL 与任何值比较都是 false
+    if (is_null() || other.is_null()) {
+      return false;
+    }
     auto cmp_result = compare(other);
     switch (comp) {
       case EQUAL_TO:
@@ -54,6 +58,7 @@ class TupleValue {
     return cmp_result;
   }
   virtual AttrType type() const = 0;
+  virtual bool is_null() const = 0;
   AggregationType aggregation_type() const { return aggregation_type_; }
 
  protected:
@@ -64,8 +69,8 @@ class TupleValue {
 class IntValue : public TupleValue {
  public:
   explicit IntValue(int value) : value_(value), avg_(value) {}
-  explicit IntValue(int value, AggregationType aggregation_type)
-      : value_(value), avg_(value) {
+  explicit IntValue(int value, AggregationType aggregation_type, bool is_null)
+      : value_(value), avg_(value), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
 
@@ -80,12 +85,20 @@ class IntValue : public TupleValue {
         delete[] out;
       } break;
       default: {
-        os << value_;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          os << value_;
+        }
       }
     }
   }
 
   void merge(const TupleValue &other) override {
+    // NULL 不计入聚合
+    if (other.is_null()) {
+      return;
+    }
     const IntValue &int_other = (const IntValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -118,16 +131,21 @@ class IntValue : public TupleValue {
     return INTS;
   }
 
+  bool is_null() const override {
+    return is_null_;
+  }
+
 private:
   int value_;
   double avg_ = 0;
+  bool is_null_ = false;
 };
 
 class FloatValue : public TupleValue {
  public:
   explicit FloatValue(float value) : value_(value), avg_(value) {}
-  explicit FloatValue(float value, AggregationType aggregation_type)
-      : value_(value), avg_(value) {
+  explicit FloatValue(float value, AggregationType aggregation_type, bool is_null)
+      : value_(value), avg_(value), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
 
@@ -142,14 +160,22 @@ class FloatValue : public TupleValue {
         delete[] out;
       } break;
       default: {
-        const char *out = format_double(double(value_));
-        os << out;
-        delete[] out;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          const char *out = format_double(double(value_));
+          os << out;
+          delete[] out;
+        }
       }
     }
   }
 
   void merge(const TupleValue &other) override {
+    // NULL 不计入聚合
+    if (other.is_null()) {
+      return;
+    }
     const FloatValue &float_other = (const FloatValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -188,16 +214,21 @@ class FloatValue : public TupleValue {
   AttrType type() const override {
     return FLOATS;
   }
+
+  bool is_null() const override {
+    return is_null_;
+  }
 private:
   float value_;
   double avg_ = 0;
+  bool is_null_ = false;
 };
 
 class DateValue : public TupleValue {
  public:
   explicit DateValue(time_t value) : value_(value) {}
-  explicit DateValue(time_t value, AggregationType aggregation_type)
-      : value_(value) {
+  explicit DateValue(time_t value, AggregationType aggregation_type, bool is_null)
+      : value_(value), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
 
@@ -207,15 +238,23 @@ class DateValue : public TupleValue {
         os << count;
       } break;
       default: {
-        struct tm *ptm = std::localtime(&value_);
-        char buffer[32];
-        strftime(buffer, 32, "%Y-%m-%d", ptm);
-        os << buffer;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          struct tm *ptm = std::localtime(&value_);
+          char buffer[32];
+          strftime(buffer, 32, "%Y-%m-%d", ptm);
+          os << buffer;
+        }
       }
     }
   }
 
   void merge(const TupleValue &other) override {
+    // NULL 不计入聚合
+    if (other.is_null()) {
+      return;
+    }
     const DateValue &date_other = (const DateValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -247,15 +286,20 @@ class DateValue : public TupleValue {
   AttrType type() const override {
     return DATES;
   }
+
+  bool is_null() const override {
+    return is_null_;
+  }
 private:
   time_t value_;
+  bool is_null_ = false;
 };
 
 class StringValue : public TupleValue {
  public:
   StringValue(const char *value, int len) : value_(value, len) {}
-  StringValue(const char *value, int len, AggregationType aggregation_type)
-      : value_(value, len) {
+  StringValue(const char *value, int len, AggregationType aggregation_type, bool is_null)
+      : value_(value, len), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
   explicit StringValue(const char *value) : value_(value) {}
@@ -270,12 +314,20 @@ class StringValue : public TupleValue {
         os << count;
       } break;
       default: {
-        os << value_;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          os << value_;
+        }
       }
     }
   }
 
   void merge(const TupleValue &other) override {
+    // NULL 不计入聚合
+    if (other.is_null()) {
+      return;
+    }
     const StringValue &string_other = (const StringValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -300,8 +352,13 @@ class StringValue : public TupleValue {
   AttrType type() const override {
     return CHARS;
   }
+
+  bool is_null() const override {
+    return is_null_;
+  }
 private:
   std::string value_;
+  bool is_null_ = false;
 };
 
 #endif  //__OBSERVER_SQL_EXECUTOR_VALUE_H_
