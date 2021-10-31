@@ -297,6 +297,11 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
         return rc;
       }
       schema_add_field(tables[idx], attr.attribute_name, attr.aggregation_type, output_schema);
+    } else if (attr.aggregation_type != None && (attr.is_num == 1 || 0 == strcmp("*", attr.attribute_name))) {
+      // count(1) count(*)
+      // 权宜之计，不适用于多表
+      auto field = tables[0]->table_meta().field(0);
+      output_schema.add(field->type(), tables[0]->name(), attr.attribute_name, attr.aggregation_type);
     }
   }
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
