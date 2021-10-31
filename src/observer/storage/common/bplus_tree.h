@@ -161,6 +161,7 @@ private:
   bool opened_ = false;
   CompOp comp_op_ = NO_OP;                      // 用于比较的操作符
   const char *value_ = nullptr;		              // 与属性行比较的值
+  bool is_null_ = false;
   int num_fixed_pages_ = -1;                    // 固定在缓冲区中的页，与指定的页面固定策略有关
   int pinned_page_count_ = 0;                   // 实际固定在缓冲区的页面数
   BPPageHandle page_handles_[BP_BUFFER_SIZE];   // 固定在缓冲区页面所对应的页面操作列表
