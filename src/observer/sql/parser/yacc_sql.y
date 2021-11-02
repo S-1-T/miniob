@@ -23,7 +23,6 @@ typedef struct ParserContext {
   InsertTuple tuples[MAX_NUM];
   Condition conditions[MAX_NUM][MAX_NUM];
   Selects selects[MAX_NUM];
-  CompOp comp[MAX_NUM];
   char id[MAX_NUM];
 } ParserContext;
 
@@ -158,6 +157,7 @@ ParserContext *get_context(yyscan_t scanner)
 %type <number> aggregation;
 %type <number> order_type;
 %type <number> nullable;
+%type <number> comOp
 
 %%
 
@@ -625,7 +625,7 @@ condition:
             Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 0, NULL, right_value);
+            condition_init(&condition, $2, 1, &left_attr, NULL, 0, NULL, right_value);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
         }
         |value comOp value 
@@ -634,7 +634,7 @@ condition:
             Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 0, NULL, left_value, 0, NULL, right_value);
+            condition_init(&condition, $2, 0, NULL, left_value, 0, NULL, right_value);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
         }
         |ID comOp ID 
@@ -645,7 +645,7 @@ condition:
             relation_attr_init(&right_attr, NULL, $3);
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 1, &right_attr, NULL);
+            condition_init(&condition, $2, 1, &left_attr, NULL, 1, &right_attr, NULL);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
 
         }
@@ -656,7 +656,7 @@ condition:
             relation_attr_init(&right_attr, NULL, $3);
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 0, NULL, left_value, 1, &right_attr, NULL);
+            condition_init(&condition, $2, 0, NULL, left_value, 1, &right_attr, NULL);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
         }
     |ID DOT ID comOp value
@@ -666,7 +666,7 @@ condition:
             Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 0, NULL, right_value);
+            condition_init(&condition, $4, 1, &left_attr, NULL, 0, NULL, right_value);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
     }
     |value comOp ID DOT ID
@@ -677,7 +677,7 @@ condition:
             relation_attr_init(&right_attr, $3, $5);
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 0, NULL, left_value, 1, &right_attr, NULL);
+            condition_init(&condition, $2, 0, NULL, left_value, 1, &right_attr, NULL);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
     }
     |ID DOT ID comOp ID DOT ID
@@ -688,7 +688,7 @@ condition:
             relation_attr_init(&right_attr, $5, $7);
 
             Condition condition;
-            condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 1, &right_attr, NULL);
+            condition_init(&condition, $4, 1, &left_attr, NULL, 1, &right_attr, NULL);
             CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
     }
     |ID comOp LBRACE select_begin select_attr FROM ID rel_list where RBRACE
@@ -711,7 +711,7 @@ condition:
 	    Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
 	    Condition condition;
-	    condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 2, NULL, right_value);
+	    condition_init(&condition, $2, 1, &left_attr, NULL, 2, NULL, right_value);
 	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
 
 	    //处理子查询内存
@@ -737,7 +737,7 @@ condition:
     	    Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
     	    Condition condition;
-    	    condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 1, &left_attr, NULL, 2, NULL, right_value);
+    	    condition_init(&condition, $4, 1, &left_attr, NULL, 2, NULL, right_value);
     	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
 
     	    //处理子查询内存
@@ -763,7 +763,7 @@ condition:
 	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
 	    Condition condition;
-	    condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 2, NULL, left_value, 1, &right_attr, NULL);
+	    condition_init(&condition, $9, 2, NULL, left_value, 1, &right_attr, NULL);
 	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
 
 	    //处理子查询内存
@@ -789,7 +789,7 @@ condition:
     	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
 
     	    Condition condition;
-    	    condition_init(&condition, CONTEXT->comp[CONTEXT->select_length], 2, NULL, left_value, 1, &right_attr, NULL);
+    	    condition_init(&condition, $9, 2, NULL, left_value, 1, &right_attr, NULL);
     	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
 
     	    //处理子查询内存
@@ -798,16 +798,16 @@ condition:
     ;
 
 comOp:
-        EQ { CONTEXT->comp[CONTEXT->select_length] = EQUAL_TO; }
-    | LT { CONTEXT->comp[CONTEXT->select_length] = LESS_THAN; }
-    | GT { CONTEXT->comp[CONTEXT->select_length] = GREAT_THAN; }
-    | LE { CONTEXT->comp[CONTEXT->select_length] = LESS_EQUAL; }
-    | GE { CONTEXT->comp[CONTEXT->select_length] = GREAT_EQUAL; }
-    | NE { CONTEXT->comp[CONTEXT->select_length] = NOT_EQUAL; }
-    | IS_ { CONTEXT->comp[CONTEXT->select_length] = IS; }
-    | IS_ NOT { CONTEXT->comp[CONTEXT->select_length] = IS_NOT; }
-    | IN { CONTEXT->comp[CONTEXT->select_length] = IN_OP; }
-    | NOT IN { CONTEXT->comp[CONTEXT->select_length] = NOT_IN_OP; }
+        EQ { $$ = EQUAL_TO; }
+    | LT { $$ = LESS_THAN; }
+    | GT { $$ = GREAT_THAN; }
+    | LE { $$ = LESS_EQUAL; }
+    | GE { $$ = GREAT_EQUAL; }
+    | NE { $$ = NOT_EQUAL; }
+    | IS_ { $$ = IS; }
+    | IS_ NOT { $$ = IS_NOT; }
+    | IN { $$ = IN_OP; }
+    | NOT IN { $$ = NOT_IN_OP; }
     ;
 
 aggregation:
