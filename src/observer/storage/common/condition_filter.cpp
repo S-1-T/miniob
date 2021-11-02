@@ -41,10 +41,10 @@ DefaultConditionFilter::DefaultConditionFilter() {
 DefaultConditionFilter::~DefaultConditionFilter() {}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
-                                AttrType attr_type, CompOp comp_op) {
-  if (attr_type < CHARS || attr_type > TUPLESET) {
-    LOG_ERROR("Invalid condition with unsupported attribute type: %d",
-              attr_type);
+                                AttrType attr_type, AttrType type_right, CompOp comp_op) {
+  if (attr_type < CHARS || attr_type > TUPLESET || type_right < CHARS || type_right > TUPLESET) {
+    LOG_ERROR("Invalid condition with unsupported attribute type: %d %d",
+              attr_type, type_right);
     return RC::INVALID_ARGUMENT;
   }
 
@@ -57,6 +57,7 @@ RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
   left_ = left;
   right_ = right;
   attr_type_ = attr_type;
+  type_right_ = type_right;
   comp_op_ = comp_op;
   return RC::SUCCESS;
 }
@@ -183,7 +184,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
       }
     }
   }
-  return init(left, right, type_left, condition.comp);
+  return init(left, right, type_left, type_right, condition.comp);
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const {
@@ -224,7 +225,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
   } else {
     if (right_.attr_type == TUPLESET) {
       TupleSet* tupleSet = reinterpret_cast<TupleSet*>(right_value);
-      TupleValue* left_data = getTuple(left_value);
+      TupleValue* left_data = getTuple(attr_type_, left_value);
       for (int i=0; i<tupleSet->size(); i++) {
         if (left_data->compare_with_op(tupleSet->get(i).get(0), comp_op_)) {
           delete left_data;
@@ -234,7 +235,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
       delete left_data;
     } else {
       TupleSet* tupleSet = reinterpret_cast<TupleSet*>(left_value);
-      TupleValue* right_data = getTuple(right_value);
+      TupleValue* right_data = getTuple(type_right_, right_value);
       for (int i=0; i<tupleSet->size(); i++) {
         if (tupleSet->get(i).get(0).compare_with_op(*right_data, comp_op_)) {
           delete right_data;
@@ -270,13 +271,13 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
   return cmp_result;  // should not go here
 }
 
-TupleValue *DefaultConditionFilter::getTuple(char* left_value) const{
-  switch (attr_type_) {
+TupleValue *DefaultConditionFilter::getTuple(AttrType attr_type, char* left_value) const{
+  switch (attr_type) {
     case CHARS: {  // 字符串都是定长的，直接比较
       return dynamic_cast<TupleValue *>(new StringValue(left_value));
     } break;
     case INTS: {
-      return dynamic_cast<TupleValue *>(new IntValue(*(int *) left_value));
+      return dynamic_cast<TupleValue *>(new IntValue((*(int *) left_value)));
     } break;
     case FLOATS: {
       return dynamic_cast<TupleValue *>(new FloatValue(*(float *)left_value));

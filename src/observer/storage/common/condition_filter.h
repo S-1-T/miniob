@@ -48,7 +48,7 @@ public:
   DefaultConditionFilter();
   virtual ~DefaultConditionFilter();
 
-  RC init(const ConDesc &left, const ConDesc &right, AttrType attr_type, CompOp comp_op);
+  RC init(const ConDesc &left, const ConDesc &right, AttrType attr_type, AttrType type_right, CompOp comp_op);
   RC init(Table &table, const Condition &condition);
 
   virtual bool filter(const Record &rec) const;
@@ -67,12 +67,13 @@ public:
   }
 private:
   int get_cmp_result(char *left_value, char *right_value) const;
-  TupleValue *getTuple(char* left_value) const;
+  TupleValue *getTuple(AttrType attr_type, char* left_value) const;
 
 private:
   ConDesc  left_;
   ConDesc  right_;
-  AttrType attr_type_ = UNDEFINED;
+  AttrType attr_type_ = UNDEFINED;   /* left的数据类型 */
+  AttrType type_right_ = UNDEFINED;  /* right的数据类型 */
   CompOp   comp_op_ = NO_OP;
 };
 

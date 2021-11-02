@@ -69,11 +69,15 @@ class TupleValue {
   virtual AttrType type() const = 0;
   virtual bool is_null() const = 0;
   AggregationType aggregation_type() const { return aggregation_type_; }
-
+  int get_count() const { return count; }
+  virtual double get_avg() const { }
+  virtual double get_value() const { };
  protected:
   int count = 1;
   AggregationType aggregation_type_ = None;
 };
+
+class FloatValue;
 
 class IntValue : public TupleValue {
  public:
@@ -141,8 +145,31 @@ class IntValue : public TupleValue {
   }
 
   int compare(const TupleValue &other) const override {
-    const IntValue &int_other = (const IntValue &)other;
-    return value_ - (int_other.aggregation_type_ == AvgAggregate ? int_other.avg_ : int_other.value_);
+    double this_value;
+    if (aggregation_type_ == CountAggregate) {
+      this_value = count;
+    } else if (aggregation_type_ == AvgAggregate) {
+      this_value = avg_;
+    } else {
+      this_value = value_;
+    }
+
+    double other_value;
+    if (other.aggregation_type() == CountAggregate) {
+      other_value = other.get_count();
+    } else if (other.aggregation_type() == AvgAggregate) {
+      other_value = other.get_avg();
+    } else {
+      other_value = other.get_value();
+    }
+
+    double cmp_ret = this_value - other_value;
+    if (cmp_ret < -1e-6) {
+      return -1;
+    } else if (cmp_ret > 1e-6) {
+      return 1;
+    }
+    return 0;
   }
 
   AttrType type() const override {
@@ -152,6 +179,10 @@ class IntValue : public TupleValue {
   bool is_null() const override {
     return is_null_;
   }
+
+  double get_avg() const override { return avg_; }
+
+  double get_value() const override { return value_; }
 
 private:
   int value_;
@@ -227,15 +258,33 @@ class FloatValue : public TupleValue {
   }
 
   int compare(const TupleValue &other) const override {
-    const FloatValue &float_other = (const FloatValue &)other;
-    float result = value_ - (float_other.aggregation_type_ == AvgAggregate ? float_other.avg_ : float_other.value_);
-    if (result > 0) {  // 浮点数没有考虑精度问题
-      return 1;
+    double this_value;
+    if (aggregation_type_ == CountAggregate) {
+      this_value = count;
+    } else if (aggregation_type_ == AvgAggregate) {
+      this_value = avg_;
+    } else {
+      this_value = value_;
     }
-    if (result < 0) {
+
+    double other_value;
+    if (other.aggregation_type() == CountAggregate) {
+      other_value = other.get_count();
+    } else if (other.aggregation_type() == AvgAggregate) {
+      other_value = other.get_avg();
+    } else {
+      other_value = other.get_value();
+    }
+
+    double cmp_ret = this_value - other_value;
+
+    if (cmp_ret < -1e-6) {
       return -1;
+    } else if (cmp_ret > 1e-6) {
+      return 1;
+    } else {
+      return 0;
     }
-    return 0;
   }
 
   AttrType type() const override {
@@ -245,10 +294,17 @@ class FloatValue : public TupleValue {
   bool is_null() const override {
     return is_null_;
   }
+
+  double get_avg() const override { return avg_; }
+
+  double get_value() const override { return value_; }
+
 private:
   float value_;
   double avg_ = 0;
   bool is_null_ = false;
+
+  friend class IntValue;
 };
 
 class DateValue : public TupleValue {
