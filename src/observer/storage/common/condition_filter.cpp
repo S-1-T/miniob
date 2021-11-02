@@ -98,7 +98,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
       type_left = tupleSet->get_schema().field(0).type();
       left.attr_type = TUPLESET;
 
-      if (condition.comp != IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
+      if (tupleSet->get_schema().field(0).aggregation_type() == None) {
         sub_query_legal = false;
       }
     }
@@ -135,7 +135,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
       type_right = tupleSet->get_schema().field(0).type();
       right.attr_type = TUPLESET;
 
-      if (condition.comp != IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
+      if (condition.comp != IN_OP && condition.comp != NOT_IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
         sub_query_legal = false;
       }
     }
@@ -229,18 +229,24 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
       TupleValue* left_data = getTuple(left_value);
       for (int i=0; i<tupleSet->size(); i++) {
         if (left_data->compare_with_op(tupleSet->get(i).get(0), comp_op_)) {
-          return true;
+          delete left_data;
+          return comp_op_ != NOT_IN_OP;
         }
       }
+      delete left_data;
     } else {
       TupleSet* tupleSet = reinterpret_cast<TupleSet*>(left_value);
       TupleValue* right_data = getTuple(right_value);
       for (int i=0; i<tupleSet->size(); i++) {
         if (tupleSet->get(i).get(0).compare_with_op(*right_data, comp_op_)) {
-          return true;
+          delete right_data;
+          return comp_op_ != NOT_IN_OP;
         }
       }
+      delete right_data;
     }
+
+    return comp_op_ == NOT_IN_OP;
   }
 
   switch (comp_op_) {

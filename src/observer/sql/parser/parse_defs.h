@@ -70,6 +70,7 @@ typedef enum {
   IS,           //"IS"    6
   IS_NOT,       //"IS NOT 7
   IN_OP,
+  NOT_IN_OP,
   NO_OP
 } CompOp;
 
