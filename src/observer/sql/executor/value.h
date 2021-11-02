@@ -84,12 +84,20 @@ class IntValue : public TupleValue {
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
-        os << count;
+        if (is_null_) {
+          os << 0;
+        } else {
+          os << count;
+        }
       } break;
       case AvgAggregate: {
-        const char *out = format_double(avg_);
-        os << out;
-        delete[] out;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          const char *out = format_double(avg_);
+          os << out;
+          delete[] out;
+        }
       } break;
       default: {
         if (is_null_) {
@@ -106,6 +114,7 @@ class IntValue : public TupleValue {
     if (other.is_null()) {
       return;
     }
+    is_null_ = false;
     const IntValue &int_other = (const IntValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -159,12 +168,20 @@ class FloatValue : public TupleValue {
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
-        os << count;
+        if (is_null_) {
+          os << 0;
+        } else {
+          os << count;
+        }
       } break;
       case AvgAggregate: {
-        const char *out = format_double(avg_);
-        os << out;
-        delete[] out;
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          const char *out = format_double(avg_);
+          os << out;
+          delete[] out;
+        }
       } break;
       default: {
         if (is_null_) {
@@ -183,6 +200,7 @@ class FloatValue : public TupleValue {
     if (other.is_null()) {
       return;
     }
+    is_null_ = false;
     const FloatValue &float_other = (const FloatValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -242,7 +260,11 @@ class DateValue : public TupleValue {
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
-        os << count;
+        if (is_null_) {
+          os << 0;
+        } else {
+          os << count;
+        }
       } break;
       default: {
         if (is_null_) {
@@ -262,6 +284,7 @@ class DateValue : public TupleValue {
     if (other.is_null()) {
       return;
     }
+    is_null_ = false;
     const DateValue &date_other = (const DateValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -318,7 +341,11 @@ class StringValue : public TupleValue {
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
-        os << count;
+        if (is_null_) {
+          os << 0;
+        } else {
+          os << count;
+        }
       } break;
       default: {
         if (is_null_) {
@@ -335,6 +362,7 @@ class StringValue : public TupleValue {
     if (other.is_null()) {
       return;
     }
+    is_null_ = false;
     const StringValue &string_other = (const StringValue &)other;
     switch (aggregation_type_) {
       case CountAggregate: {
