@@ -20,7 +20,6 @@ See the Mulan PSL v2 for more details. */
 
 struct Record;
 class Table;
-class TupleValue;
 
 struct ConDesc {
   bool   is_attr;     // 是否属性，false 表示是值
@@ -65,9 +64,6 @@ public:
   CompOp comp_op() const {
     return comp_op_;
   }
-private:
-  int get_cmp_result(char *left_value, char *right_value) const;
-  TupleValue *getTuple(char* left_value) const;
 
 private:
   ConDesc  left_;
