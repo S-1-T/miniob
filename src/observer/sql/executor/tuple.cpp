@@ -59,20 +59,20 @@ void Tuple::add(TupleValue *value) { values_.emplace_back(value); }
 void Tuple::add(const std::shared_ptr<TupleValue> &other) {
   values_.emplace_back(other);
 }
-void Tuple::add(int value, AggregationType aggregation_type) {
-  add(new IntValue(value, aggregation_type));
+void Tuple::add(int value, AggregationType aggregation_type, bool is_null) {
+  add(new IntValue(value, aggregation_type, is_null));
 }
 
-void Tuple::add(float value, AggregationType aggregation_type) {
-  add(new FloatValue(value, aggregation_type));
+void Tuple::add(float value, AggregationType aggregation_type, bool is_null) {
+  add(new FloatValue(value, aggregation_type, is_null));
 }
 
-void Tuple::add(time_t value, AggregationType aggregation_type) {
-  add(new DateValue(value, aggregation_type));
+void Tuple::add(time_t value, AggregationType aggregation_type, bool is_null) {
+  add(new DateValue(value, aggregation_type, is_null));
 }
 
-void Tuple::add(const char *s, int len, AggregationType aggregation_type) {
-  add(new StringValue(s, len, aggregation_type));
+void Tuple::add(const char *s, int len, AggregationType aggregation_type, bool is_null) {
+  add(new StringValue(s, len, aggregation_type, is_null));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -285,22 +285,23 @@ void TupleRecordConverter::add_record(const char *record) {
     }
     assert(field_meta != nullptr);
     const AggregationType aggregation_type = field.aggregation_type();
+    const bool is_null = (bool)((char *)record[field_meta->offset() + field_meta->len() - 1]);
     switch (field_meta->type()) {
       case INTS: {
         int value = *(int *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type);
+        tuple.add(value, aggregation_type, is_null);
       } break;
       case FLOATS: {
         float value = *(float *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type);
+        tuple.add(value, aggregation_type, is_null);
       } break;
       case DATES: {
         time_t value = *(time_t *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type);
+        tuple.add(value, aggregation_type, is_null);
       } break;
       case CHARS: {
         const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
-        tuple.add(s, strlen(s), aggregation_type);
+        tuple.add(s, strlen(s), aggregation_type, is_null);
       } break;
       default: {
         LOG_PANIC("Unsupported field type. type=%d", field_meta->type());

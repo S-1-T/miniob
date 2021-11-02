@@ -119,6 +119,10 @@ ParserContext *get_context(yyscan_t scanner)
         ORDER
         BY
         ASC
+        IS_
+        NOT
+        NULL_T
+        NULLABLE
 
 %union {
   struct _Attr *attr;
@@ -144,8 +148,9 @@ ParserContext *get_context(yyscan_t scanner)
 %type <condition1> condition;
 %type <value1> value;
 %type <number> number;
-%type <number> aggregation
-%type <number> order_type
+%type <number> aggregation;
+%type <number> order_type;
+%type <number> nullable;
 
 %%
 
@@ -263,10 +268,10 @@ attr_def_list:
     ;
     
 attr_def:
-    ID_get type LBRACE number RBRACE 
+    ID_get type LBRACE number RBRACE nullable
         {
             AttrInfo attribute;
-            attr_info_init(&attribute, CONTEXT->id, $2, $4);
+            attr_info_init(&attribute, CONTEXT->id, $2, $4 + 1, $6);
             create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
             // CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name =(char*)malloc(sizeof(char));
             // strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -274,28 +279,29 @@ attr_def:
             // CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].length = $4;
             CONTEXT->value_length++;
         }
-    |ID_get type
+    |ID_get type nullable
         {
             AttrInfo attribute;
+            // 属性占用字节多一个用于表示是否为 NULL
             switch ($2) {
                 case INTS: {
-                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(int));
+                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(int) + 1, $3);
                 }
                 break;
                 case FLOATS: {
-                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(float));
+                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(float) + 1, $3);
                 }
                 break;
                 case DATES: {
-                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(time_t));
+                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(time_t) + 1, $3);
                 }
                 break;
                 case CHARS: {
-                    attr_info_init(&attribute, CONTEXT->id, $2, 4);
+                    attr_info_init(&attribute, CONTEXT->id, $2, 5, $3);
                 }
                 break;
                 default: {
-                    attr_info_init(&attribute, CONTEXT->id, $2, 4);
+                    attr_info_init(&attribute, CONTEXT->id, $2, 5, $3);
                 }
             }
             create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
@@ -306,6 +312,13 @@ attr_def:
             CONTEXT->value_length++;
         }
     ;
+
+nullable:
+    /* empty */ { $$ = 0; }
+    | NULLABLE { $$ = 1; }
+    | NOT NULL_T { $$ = 0; }
+    ;
+
 number:
         NUMBER {$$ = $1;}
         ;
@@ -354,7 +367,10 @@ value_list:
       };
 
 value:
-    NUMBER{	
+    NULL_T {
+        value_init_null(&CONTEXT->values[CONTEXT->value_length++]);
+    }
+    |NUMBER{
         value_init_integer(&CONTEXT->values[CONTEXT->value_length++], $1);
     }
     |FLOAT{
@@ -727,6 +743,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+    | IS_ { CONTEXT->comp = IS; }
+    | IS_ NOT { CONTEXT->comp = IS_NOT; }
     ;
 
 aggregation:

@@ -365,6 +365,11 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
     const FieldMeta *field =
       table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
+    // 首先检查是否可以是 NULL
+    if (!field->nullable() && value.is_null) {
+      LOG_ERROR("Field %s is not nullable, but value is null", field->name());
+      return RC::CONSTRAINT_NOTNULL;
+    }
     // 检查 Meta 信息：比对类型信息
     if (!is_type_convertable(field->type(), value.type)) {
       LOG_ERROR(
@@ -382,7 +387,7 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
       table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
     if (convert_type(value.type, value.data, field->type(),
-                     record + field->offset(), field->len()) != RC::SUCCESS) {
+                     record + field->offset(), field->len(), value.is_null) != RC::SUCCESS) {
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
@@ -798,7 +803,7 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
   void *data = new char[field_to_update->len()];
   // 需要做隐式转换
   if (convert_type(value->type, value->data, field_to_update->type(),
-                   data, field_to_update->len()) != RC::SUCCESS) {
+                   data, field_to_update->len(), value->is_null) != RC::SUCCESS) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
   CompositeConditionFilter condition_filter;

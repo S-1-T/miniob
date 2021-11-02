@@ -480,7 +480,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
       output.sort(selects.order_bys, selects.order_by_num);
     }
     // 当前只查询一张表，直接返回结果即可
-    output.set_schema(output_schema);
+//    output.set_schema(output_schema);
     output.print(ss, false);
   }
 

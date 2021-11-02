@@ -1551,7 +1551,7 @@ RC BplusTreeHandler::find_first_index_satisfied(CompOp compop, const char *key, 
   RC rc;
   int i,tmp;
   RID rid;
-  if(compop == LESS_THAN || compop == LESS_EQUAL || compop == NOT_EQUAL){
+  if(compop == LESS_THAN || compop == LESS_EQUAL || compop == NOT_EQUAL || compop == IS || compop == IS_NOT){
     rc = get_first_leaf_page(page_num);
     if(rc != SUCCESS){
       return rc;
@@ -1693,9 +1693,14 @@ RC BplusTreeScanner::open(CompOp comp_op,const char *value) {
     LOG_ERROR("Failed to alloc memory for value. size=%d", index_handler_.file_header_.attr_length);
     return RC::NOMEM;
   }
-  memcpy(value_copy, value, index_handler_.file_header_.attr_length);
+  if (value != nullptr) {
+    memcpy(value_copy, value, index_handler_.file_header_.attr_length);
+  } else {
+    memset(value_copy, 0, index_handler_.file_header_.attr_length);
+    is_null_ = true;
+  }
   value_ = value_copy; // free value_
-  rc = index_handler_.find_first_index_satisfied(comp_op, value, &next_page_num_, &index_in_node_);
+  rc = index_handler_.find_first_index_satisfied(comp_op, value_, &next_page_num_, &index_in_node_);
   if(rc != SUCCESS){
     if(rc == RC::RECORD_EOF){
       next_page_num_ = -1;
@@ -1718,6 +1723,7 @@ RC BplusTreeScanner::close() {
   free((void *)value_);
   value_ = nullptr;
   opened_ = false;
+  is_null_ = false;
   return RC::SUCCESS;
 }
 
@@ -1820,6 +1826,18 @@ bool BplusTreeScanner::satisfy_condition(const char *pkey) {
 
   if(comp_op_ == NO_OP){
     return true;
+  }
+
+  // 处理 NULL 的情况
+  bool pkey_is_null = (bool)(pkey[index_handler_.file_header_.attr_length - 1]);
+  if (is_null_ || pkey_is_null) {
+    if (comp_op_ == IS) {
+      return is_null_ == pkey_is_null;
+    } else if (comp_op_ == IS_NOT) {
+      return is_null_ != pkey_is_null;
+    } else {
+      return false;
+    }
   }
 
   AttrType  attr_type = index_handler_.file_header_.attr_type;
