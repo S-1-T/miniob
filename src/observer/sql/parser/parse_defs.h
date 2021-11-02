@@ -69,11 +69,13 @@ typedef enum {
   GREAT_THAN,   //">"     5
   IS,           //"IS"    6
   IS_NOT,       //"IS NOT 7
+  IN_OP,
+  NOT_IN_OP,
   NO_OP
 } CompOp;
 
 //属性值类型, NULL_ 本身不是个类型，只是用来比较
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, NULL_ } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, NULL_, SELECTS, TUPLESET } AttrType;
 
 //属性值
 typedef struct _Value {
@@ -84,7 +86,7 @@ typedef struct _Value {
 
 typedef struct _Condition {
   int left_is_attr;    // TRUE if left-hand side is an attribute
-                       // 1时，操作符左边是属性名，0时，是属性值
+                       // 1时，操作符左边是属性名，0时，是属性值; 2是select
   Value left_value;    // left-hand side value if left_is_attr = FALSE
   RelAttr left_attr;   // left-hand side attribute
   CompOp comp;         // comparison operator
@@ -235,6 +237,7 @@ void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
 void value_init_null(Value *value);
+void value_init_select(Value *value, Selects select);
 void value_destroy(Value *value);
 
 void condition_init(Condition *condition, CompOp comp, int left_is_attr, RelAttr *left_attr, Value *left_value,

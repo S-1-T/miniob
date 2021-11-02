@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse.h"
 #include "sql/executor/tuple.h"
 #include "rc.h"
+#include "execution_node.h"
 
 class SessionEvent;
 
@@ -42,6 +43,9 @@ protected:
   void handle_request(common::StageEvent *event);
   RC selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema);
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_subSelect(const char *db, Selects &selects, SessionEvent *session_event, TupleSet &tupleSet);
+  RC create_selection_executor(Trx *trx, const char *db, SessionEvent *session_event, Selects &selects, Table *table,
+  SelectExeNode &select_node);
 protected:
 private:
   Stage *default_storage_stage_ = nullptr;

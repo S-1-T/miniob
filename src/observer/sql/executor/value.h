@@ -47,6 +47,8 @@ class TupleValue {
     }
     auto cmp_result = compare(other);
     switch (comp) {
+      case IN_OP:
+      case NOT_IN_OP:
       case EQUAL_TO:
         return 0 == cmp_result;
       case LESS_EQUAL:
@@ -140,7 +142,7 @@ class IntValue : public TupleValue {
 
   int compare(const TupleValue &other) const override {
     const IntValue &int_other = (const IntValue &)other;
-    return value_ - int_other.value_;
+    return value_ - (int_other.aggregation_type_ == AvgAggregate ? int_other.avg_ : int_other.value_);
   }
 
   AttrType type() const override {
@@ -226,7 +228,7 @@ class FloatValue : public TupleValue {
 
   int compare(const TupleValue &other) const override {
     const FloatValue &float_other = (const FloatValue &)other;
-    float result = value_ - float_other.value_;
+    float result = value_ - (float_other.aggregation_type_ == AvgAggregate ? float_other.avg_ : float_other.value_);
     if (result > 0) {  // 浮点数没有考虑精度问题
       return 1;
     }

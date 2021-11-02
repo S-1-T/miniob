@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include <mutex>
+#include <sql/executor/tuple.h>
 
 #include "sql/parser/parse.h"
 #include "rc.h"
@@ -86,7 +87,15 @@ void value_init_null(Value *value) {
   value->data = nullptr;
 }
 
+void value_init_select(Value *value, Selects v){
+  value->type = SELECTS;
+  value->data = malloc(sizeof(v));
+  memcpy(value->data, &v, sizeof(v));
+}
 void value_destroy(Value *value) {
+  if (value->type == SELECTS) {
+    selects_destroy((Selects*)value->data);
+  }
   value->type = UNDEFINED;
   free(value->data);
   value->data = nullptr;
@@ -98,14 +107,14 @@ void condition_init(Condition *condition, CompOp comp,
                     int right_is_attr, RelAttr *right_attr, Value *right_value) {
   condition->comp = comp;
   condition->left_is_attr = left_is_attr;
-  if (left_is_attr) {
+  if (left_is_attr == 1) {
     condition->left_attr = *left_attr;
   } else {
     condition->left_value = *left_value;
   }
 
   condition->right_is_attr = right_is_attr;
-  if (right_is_attr) {
+  if (right_is_attr == 1) {
     condition->right_attr = *right_attr;
   } else {
     condition->right_value = *right_value;
