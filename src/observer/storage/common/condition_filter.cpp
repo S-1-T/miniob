@@ -105,7 +105,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     left.attr_length = 0;
     left.attr_offset = 0;
-    left.attr_type = type_left;
     left.is_null = condition.left_value.is_null;
   }
   if (1 == condition.right_is_attr) {
@@ -142,7 +141,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     right.attr_length = 0;
     right.attr_offset = 0;
-    right.attr_type = type_right;
     right.is_null = condition.right_value.is_null;
   }
   // 校验和转换
