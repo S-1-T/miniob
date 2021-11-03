@@ -792,7 +792,13 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
         for (DefaultConditionFilter * &filter : condition_filters) {
           delete filter;
         }
+        value_destroy(value);
         return rc;
+      }
+      if (tupleSet->schema().fields().size() != 1) {
+        LOG_WARN("tuple set column size is not 1, cannot be compare");
+        value_destroy(value);
+        return RC::MISMATCH;
       }
       value_destroy(value);
 
