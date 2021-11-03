@@ -75,7 +75,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型, NULL_ 本身不是个类型，只是用来比较
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, NULL_, SELECTS, TUPLESET } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, TEXTS, NULL_, SELECTS, TUPLESET } AttrType;
 
 //属性值
 typedef struct _Value {

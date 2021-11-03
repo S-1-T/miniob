@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 
 static const Json::StaticString FIELD_TABLE_NAME("table_name");
 static const Json::StaticString FIELD_FIELDS("fields");
+static const Json::StaticString FIELD_TEXT_FIELDS("text_fields");
 static const Json::StaticString FIELD_INDEXES("indexes");
 
 std::vector<FieldMeta> TableMeta::sys_fields_;
@@ -28,6 +29,7 @@ std::vector<FieldMeta> TableMeta::sys_fields_;
 TableMeta::TableMeta(const TableMeta &other) :
         name_(other.name_),
         fields_(other.fields_),
+        text_fields_(other.text_fields_),
         indexes_(other.indexes_),
         record_size_(other.record_size_){
 }
@@ -35,6 +37,7 @@ TableMeta::TableMeta(const TableMeta &other) :
 void TableMeta::swap(TableMeta &other) noexcept{
   name_.swap(other.name_);
   fields_.swap(other.fields_);
+  text_fields_.swap(other.text_fields_);
   indexes_.swap(other.indexes_);
   std::swap(record_size_, other.record_size_);
 }
@@ -135,6 +138,10 @@ const FieldMeta * TableMeta::field(const char *name) const {
   return nullptr;
 }
 
+const TextFieldMeta * TableMeta::text_field(int index) const {
+  return &text_fields_[index];
+}
+
 const FieldMeta * TableMeta::find_field_by_offset(int offset) const {
   for (const FieldMeta &field : fields_) {
     if (field.offset() == offset) {
@@ -149,6 +156,10 @@ int TableMeta::field_num() const {
 
 int TableMeta::sys_field_num() const {
   return sys_fields_.size();
+}
+
+int TableMeta::text_field_num() const {
+  return text_fields_.size();
 }
 
 const IndexMeta * TableMeta::index(const char *name) const {
@@ -194,6 +205,15 @@ int TableMeta::serialize(std::ostream &ss) const {
   }
 
   table_value[FIELD_FIELDS] = std::move(fields_value);
+
+  Json::Value text_fields_value;
+  for (const TextFieldMeta & text: text_fields_) {
+    Json::Value text_field_value;
+    text.to_json(text_field_value);
+    text_fields_value.append(std::move(text_field_value));
+  }
+
+  table_value[FIELD_TEXT_FIELDS] = std::move(text_fields_value);
 
   Json::Value indexes_value;
   for (const auto &index : indexes_) {
@@ -243,6 +263,12 @@ int TableMeta::deserialize(std::istream &is) {
     return -1;
   }
 
+  const Json::Value &text_fields_value = table_value[FIELD_TEXT_FIELDS];
+  if (!text_fields_value.isArray()) {
+    LOG_ERROR("Invalid table meta. text fields is not array, json value=%s", text_fields_value.toStyledString().c_str());
+    return -1;
+  }
+
   RC rc = RC::SUCCESS;
   int field_num = fields_value.size();
   std::vector<FieldMeta> fields(field_num);
@@ -260,8 +286,21 @@ int TableMeta::deserialize(std::istream &is) {
   std::sort(fields.begin(), fields.end(), 
       [](const FieldMeta &f1, const FieldMeta &f2){return f1.offset() < f2.offset();});
 
+  int text_field_num = text_fields_value.size();
+  std::vector<TextFieldMeta> text_fields(text_field_num);
+  for (int i = 0; i < text_field_num; i++) {
+    TextFieldMeta &text_field = text_fields[i];
+    const Json::Value &text_field_value = text_fields_value[i];
+    rc = TextFieldMeta::from_json(text_field_value, text_field);
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to deserialize table meta. table name =%s", table_name.c_str());
+      return -1;
+    }
+  }
+
   name_.swap(table_name);
   fields_.swap(fields);
+  text_fields_.swap(text_fields);
   record_size_ = fields_.back().offset() + fields_.back().len();
 
   const Json::Value &indexes_value = table_value[FIELD_INDEXES];
@@ -309,4 +348,9 @@ void TableMeta::desc(std::ostream &os) const {
     os << std::endl;
   }
   os << ')' << std::endl;
+}
+
+RC TableMeta::add_text_field(const TextFieldMeta &text_field) {
+  text_fields_.push_back(text_field);
+  return RC::SUCCESS;
 }

@@ -27,6 +27,7 @@ class Index;
 class IndexScanner;
 class RecordDeleter;
 class Trx;
+class Text;
 
 class Table {
 public:
@@ -75,6 +76,7 @@ public:
   RC rollback_insert(Trx *trx, const RID &rid);
   RC rollback_delete(Trx *trx, const RID &rid);
   RC rollback_update(Trx *trx, const RID &rid, const char *old_data);
+  RC remove_text_files();
 
 private:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
@@ -86,6 +88,7 @@ private:
   RC delete_record(Trx *trx, Record *record);
   RC update_record(Trx *trx, Record *record, const char *old_data);
 
+  RC create_text_field(const char *base_dir, const char *name);
 private:
   friend class RecordUpdater;
   friend class RecordDeleter;
@@ -106,6 +109,7 @@ private:
   int                     file_id_;
   RecordFileHandler *     record_handler_;   /// 记录操作
   std::vector<Index *>    indexes_;
+  std::vector<Text *>     texts_;
 };
 
 #endif // __OBSERVER_STORAGE_COMMON_TABLE_H__

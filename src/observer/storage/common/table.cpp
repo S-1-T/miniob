@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/common/condition_filter.h"
+#include "storage/common/text.h"
 #include "storage/common/meta_util.h"
 #include "storage/trx/trx.h"
 #include "storage/common/type/convert.h"
@@ -87,6 +88,20 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
     return rc;  // delete table file
   }
 
+  // 创建 text 文件
+  int field_num = table_meta_.field_num();
+  for (int i = 0; i < field_num; i++) {
+    const FieldMeta *field = table_meta_.field(i);
+    if (field->type() == TEXTS) {
+      rc = create_text_field(base_dir, field->name());
+      if (rc != RC::SUCCESS) {
+        LOG_ERROR("Failed to create text field %s file for table %s",
+                  field->name(), name);
+        return rc;
+      }
+    }
+  }
+
   std::fstream fs;
   fs.open(path, std::ios_base::out | std::ios_base::binary);
   if (!fs.is_open()) {
@@ -137,6 +152,29 @@ RC Table::open(const char *meta_file, const char *base_dir) {
   RC rc = init_record_handler(base_dir);
 
   base_dir_ = base_dir;
+
+  const int text_field_num = table_meta_.text_field_num();
+  for (int i = 0; i < text_field_num; i++) {
+    const TextFieldMeta *text_field_meta = table_meta_.text_field(i);
+    if (text_field_meta == nullptr) {
+      LOG_PANIC(
+        "Found invalid text field meta info which has a non-exists field. "
+        "table=%s, field=%s",
+        name(), text_field_meta->name());
+      return RC::GENERIC_ERROR;
+    }
+    Text *text = new Text;
+    std::string text_file = text_data_file(base_dir_.c_str(), name(), text_field_meta->name());
+    rc = text->open(text_file.c_str(), *text_field_meta);
+    if (rc != RC::SUCCESS) {
+      delete text;
+      LOG_ERROR(
+        "Failed to open text file. table=%s,  file=%s, rc=%d:%s",
+        name(), text_file.c_str(), rc, strrc(rc));
+      return rc;
+    }
+    texts_.push_back(text);
+  }
 
   const int index_num = table_meta_.index_num();
   for (int i = 0; i < index_num; i++) {
@@ -1086,6 +1124,16 @@ RC Table::sync() {
     return rc;
   }
 
+  for (Text *text: texts_) {
+    rc = text->sync();
+    if (rc != RC::SUCCESS) {
+        LOG_ERROR(
+        "Failed to flush text's pages. table=%s, text field=%s, rc=%d:%s",
+        name(), text->meta().name(), rc, strrc(rc));
+      return rc; 
+    }
+  }
+
   for (Index *index : indexes_) {
     rc = index->sync();
     if (rc != RC::SUCCESS) {
@@ -1097,4 +1145,35 @@ RC Table::sync() {
   }
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
+}
+
+RC Table::create_text_field(const char *base_dir, const char *text_field_name) {
+  if (text_field_name == nullptr || common::is_blank(text_field_name)) {
+    return RC::INVALID_ARGUMENT;
+  }
+  TextFieldMeta new_text_field;
+  RC rc = new_text_field.init(text_field_name);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  Text *text = new Text;
+  std::string text_file = text_data_file(base_dir, name(), text_field_name);
+  rc = text->create(text_file.c_str(), new_text_field);
+  if (rc != RC::SUCCESS) {
+    delete text;
+    LOG_ERROR("Failed to create text field. file name=%s, rc=%d:%s", text_file.c_str(), rc, strrc(rc));
+    return rc;
+  }
+  texts_.push_back(text);
+  table_meta_.add_text_field(new_text_field);
+  return RC::SUCCESS;
+}
+
+RC Table::remove_text_files() {
+  for (int i = 0; i < table_meta_.text_field_num(); i++) {
+    texts_[i]->close();
+    std::string text_file = text_data_file(base_dir_.c_str(), name(), table_meta_.text_field(i)->name());
+    remove(text_file.c_str());
+  }
+  return RC::SUCCESS;
 }

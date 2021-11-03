@@ -21,3 +21,6 @@ std::string index_data_file(const char *base_dir, const char *table_name, const 
   return std::string(base_dir) + "/" + table_name + "-" + index_name + TABLE_INDEX_SUFFIX;
 }
 
+std::string text_data_file(const char *base_dir, const char *table_name, const char *text_field_name) {
+  return std::string(base_dir) + "/" + table_name + "-" + text_field_name + TABLE_TEXT_FIELD_SUFFIX;
+}

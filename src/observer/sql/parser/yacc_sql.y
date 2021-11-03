@@ -94,6 +94,7 @@ ParserContext *get_context(yyscan_t scanner)
         STRING_T
         FLOAT_T
         DATE_T
+        TEXT_T
         HELP
         EXIT
         DOT //QUOTE
@@ -301,6 +302,10 @@ attr_def:
                 case CHARS: {
                     attr_info_init(&attribute, CONTEXT->id, $2, 5, $3);
                 }
+                case TEXTS: {
+                    // TEXTS 字段实际上存储的是存储内容的页号
+                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(int) + 1, $3);
+                }
                 break;
                 default: {
                     attr_info_init(&attribute, CONTEXT->id, $2, 5, $3);
@@ -321,10 +326,11 @@ number:
         NUMBER {$$ = $1;}
         ;
 type:
-    INT_T { $$=INTS; }
-       | FLOAT_T { $$=FLOATS; }
-       | DATE_T { $$=DATES; }
-       | STRING_T { $$=CHARS; }
+    INT_T { $$ = INTS; }
+       | FLOAT_T { $$ = FLOATS; }
+       | DATE_T { $$ = DATES; }
+       | STRING_T { $$ = CHARS; }
+       | TEXT_T { $$ = TEXTS; }
        ;
 ID_get:
     ID 
