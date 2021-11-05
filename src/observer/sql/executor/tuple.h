@@ -40,6 +40,7 @@ class Tuple {
   void add(float value, AggregationType aggregation_type, bool is_null);
   void add(time_t value, AggregationType aggregation_type, bool is_null);
   void add(const char *s, int len, AggregationType aggregation_type, bool is_null);
+  void add(const char *s, int len, AggregationType aggregation_type, bool is_null, bool text);
 
   const std::vector<std::shared_ptr<TupleValue>> &values() const {
     return values_;

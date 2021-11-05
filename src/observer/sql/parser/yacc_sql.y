@@ -304,7 +304,7 @@ attr_def:
                 }
                 case TEXTS: {
                     // TEXTS 字段实际上存储的是存储内容的页号
-                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(int) + 1, $3);
+                    attr_info_init(&attribute, CONTEXT->id, $2, sizeof(TextHeader) + 1, $3);
                 }
                 break;
                 default: {

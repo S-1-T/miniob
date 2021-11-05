@@ -10,6 +10,4 @@
 
 bool is_type_convertable(AttrType t1, AttrType t2);
 
-RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null);
-
 #endif //MINIDB_CONVERT_H

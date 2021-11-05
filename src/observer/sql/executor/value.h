@@ -454,4 +454,74 @@ private:
   bool is_null_ = false;
 };
 
+class TextValue : public TupleValue {
+public:
+  TextValue(const char *value, int len, AggregationType aggregation_type, bool is_null):
+    value_(value, len), is_null_(is_null) {
+      aggregation_type_ = aggregation_type;
+    }
+  explicit TextValue(const char *value, AggregationType aggregation_type) :
+    value_(value) {
+      aggregation_type_ = aggregation_type;
+    }
+
+  void to_string(std::ostream &os) const override {
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        if (is_null_) {
+          os << 0;
+        } else {
+          os << count;
+        }
+      } break;
+      default: {
+        if (is_null_) {
+          os << "NULL";
+        } else {
+          os << value_;
+        }
+      }
+    }
+  }
+
+  void merge(const TupleValue &other) override {
+    // NULL 不计入聚合
+    if (other.is_null()) {
+      return;
+    }
+    is_null_ = false;
+    const TextValue &string_other = (const TextValue &)other;
+    switch (aggregation_type_) {
+      case CountAggregate: {
+        count++;
+      } break;
+      case MaxAggregate: {
+        if (compare(string_other) < 0) value_ = string_other.value_;
+      } break;
+      case MinAggregate: {
+        if (compare(string_other) > 0) value_ = string_other.value_;
+      }
+      default: {
+      }
+    }
+  }
+
+  int compare(const TupleValue &other) const override {
+    const TextValue &string_other = (const TextValue &)other;
+    return strcmp(value_.c_str(), string_other.value_.c_str());
+  }
+
+  AttrType type() const override {
+    return TEXTS;
+  }
+
+  bool is_null() const override {
+    return is_null_;
+  }
+
+private:
+  std::string value_;
+  bool is_null_ = false;
+};
+
 #endif  //__OBSERVER_SQL_EXECUTOR_VALUE_H_

@@ -1802,7 +1802,7 @@ yyreduce:
                 }
                 case TEXTS: {
                     // TEXTS 字段实际上存储的是存储内容的页号
-                    attr_info_init(&attribute, CONTEXT->id, (yyvsp[-1].number), sizeof(int) + 1, (yyvsp[0].number));
+                    attr_info_init(&attribute, CONTEXT->id, (yyvsp[-1].number), sizeof(TextHeader) + 1, (yyvsp[0].number));
                 }
                 break;
                 default: {

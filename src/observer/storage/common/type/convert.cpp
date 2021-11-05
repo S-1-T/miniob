@@ -9,6 +9,8 @@
 #include "common/log/log.h"
 #include "storage/common/type/convert.h"
 #include "storage/common/type/date.h"
+#include "sql/parser/parse_defs.h"
+#include "storage/common/text.h"
 
 
 static const bool type_convertable[9][9] = {
@@ -25,63 +27,4 @@ static const bool type_convertable[9][9] = {
 
 bool is_type_convertable(AttrType t1, AttrType t2) {
   return type_convertable[t1][t2];
-}
-
-RC convert_type(AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null) {
-  // 数据部分长度为 len - 1
-  // 剩下 1 字节表示是否为 NULL
-  // 读取的 NULL 并未获取到类型，所以得先判断
-  len = len - 1;
-  if (is_null) {
-    memset(dest_data, 0, len);
-    *((char *)dest_data + len) = (char)true;
-    return RC::SUCCESS;
-  }
-  if (!type_convertable[src_type][dest_type]) {
-    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-  }
-  switch (dest_type) {
-    // INTS FLOATS 考虑隐式转换
-    case INTS: {
-      if (src_type == FLOATS) {
-        float origin = *(float *) src_data;
-        int convert = (int) origin;
-        memcpy(dest_data, &convert, len);
-      } else {
-        memcpy(dest_data, src_data, len);
-      }
-      break;
-    }
-    case FLOATS: {
-      if (src_type == INTS) {
-        int origin = *(int *) src_data;
-        float convert = (float) origin;
-        memcpy(dest_data, &convert, len);
-      } else {
-        memcpy(dest_data, src_data, len);
-      }
-      break;
-    }
-    case CHARS: {
-      memcpy(dest_data, src_data, std::min(len, (int)strlen(static_cast<char *>(src_data)) + 1));
-      break;
-    }
-    case DATES: {
-      try {
-        Date date = Date(static_cast<char *>(src_data));
-        time_t date_time_t = date.get_inner_date_time_t();
-        memcpy(dest_data, &date_time_t, len);
-      } catch (const char *e) {
-        LOG_ERROR("Invalid value data to create a Date type. e=%s",
-                  e);
-        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-      }
-      break;
-    }
-    default:
-      memcpy(dest_data, src_data, len);
-  }
-  // 最后一个字节表示是否是 null
-  *((char *)dest_data + len) = (char)false;
-  return RC::SUCCESS;
 }

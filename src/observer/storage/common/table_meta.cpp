@@ -142,6 +142,15 @@ const TextFieldMeta * TableMeta::text_field(int index) const {
   return &text_fields_[index];
 }
 
+int TableMeta::text_field_index(const char *name) const {
+  for (int i = 0; i < text_fields_.size(); i++) {
+    if (0 == strcmp(text_fields_[i].name(), name)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 const FieldMeta * TableMeta::find_field_by_offset(int offset) const {
   for (const FieldMeta &field : fields_) {
     if (field.offset() == offset) {
@@ -263,12 +272,6 @@ int TableMeta::deserialize(std::istream &is) {
     return -1;
   }
 
-  const Json::Value &text_fields_value = table_value[FIELD_TEXT_FIELDS];
-  if (!text_fields_value.isArray()) {
-    LOG_ERROR("Invalid table meta. text fields is not array, json value=%s", text_fields_value.toStyledString().c_str());
-    return -1;
-  }
-
   RC rc = RC::SUCCESS;
   int field_num = fields_value.size();
   std::vector<FieldMeta> fields(field_num);
@@ -286,21 +289,28 @@ int TableMeta::deserialize(std::istream &is) {
   std::sort(fields.begin(), fields.end(), 
       [](const FieldMeta &f1, const FieldMeta &f2){return f1.offset() < f2.offset();});
 
-  int text_field_num = text_fields_value.size();
-  std::vector<TextFieldMeta> text_fields(text_field_num);
-  for (int i = 0; i < text_field_num; i++) {
-    TextFieldMeta &text_field = text_fields[i];
-    const Json::Value &text_field_value = text_fields_value[i];
-    rc = TextFieldMeta::from_json(text_field_value, text_field);
-    if (rc != RC::SUCCESS) {
-      LOG_ERROR("Failed to deserialize table meta. table name =%s", table_name.c_str());
-      return -1;
+  const Json::Value &text_fields_value = table_value[FIELD_TEXT_FIELDS];
+  if (!text_fields_value.empty()) {
+    if (!text_fields_value.isArray()) {
+    LOG_ERROR("Invalid table meta. text fields is not array, json value=%s", text_fields_value.toStyledString().c_str());
+    return -1;
     }
+    int text_field_num = text_fields_value.size();
+    std::vector<TextFieldMeta> text_fields(text_field_num);
+    for (int i = 0; i < text_field_num; i++) {
+      TextFieldMeta &text_field = text_fields[i];
+      const Json::Value &text_field_value = text_fields_value[i];
+      rc = TextFieldMeta::from_json(text_field_value, text_field);
+      if (rc != RC::SUCCESS) {
+        LOG_ERROR("Failed to deserialize table meta. table name =%s", table_name.c_str());
+        return -1;
+      }
+    }
+    text_fields_.swap(text_fields);
   }
-
+  
   name_.swap(table_name);
   fields_.swap(fields);
-  text_fields_.swap(text_fields);
   record_size_ = fields_.back().offset() + fields_.back().len();
 
   const Json::Value &indexes_value = table_value[FIELD_INDEXES];

@@ -77,12 +77,15 @@ public:
   RC rollback_delete(Trx *trx, const RID &rid);
   RC rollback_update(Trx *trx, const RID &rid, const char *old_data);
   RC remove_text_files();
+  Text *text(int index);
 
 private:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
   RC scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
   IndexScanner *find_index_for_scan(const ConditionFilter *filter);
   IndexScanner *find_index_for_scan(const DefaultConditionFilter &filter);
+
+  RC convert_type(const char *field_name, AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null);
 
   RC insert_record(Trx *trx, Record *record);
   RC delete_record(Trx *trx, Record *record);

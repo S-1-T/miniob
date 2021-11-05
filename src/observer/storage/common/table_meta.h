@@ -47,6 +47,7 @@ public:
   int sys_field_num() const;
   int text_field_num() const;
   const TextFieldMeta * text_field(int index) const;
+  int text_field_index(const char *name) const;
 
   const IndexMeta * index(const char *name) const;
   const IndexMeta * find_index_by_field(const char *field) const;
