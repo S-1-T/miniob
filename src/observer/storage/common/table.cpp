@@ -24,9 +24,13 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/common/condition_filter.h"
+#include "storage/common/text.h"
 #include "storage/common/meta_util.h"
 #include "storage/trx/trx.h"
 #include "storage/common/type/convert.h"
+#include "storage/common/text.h"
+#include "storage/common/type/convert.h"
+#include "storage/common/type/date.h"
 
 Table::Table()
   : data_buffer_pool_(nullptr), file_id_(-1), record_handler_(nullptr) {}
@@ -87,6 +91,20 @@ RC Table::create(const char *path, const char *name, const char *base_dir,
     return rc;  // delete table file
   }
 
+  // 创建 text 文件
+  int field_num = table_meta_.field_num();
+  for (int i = 0; i < field_num; i++) {
+    const FieldMeta *field = table_meta_.field(i);
+    if (field->type() == TEXTS) {
+      rc = create_text_field(base_dir, field->name());
+      if (rc != RC::SUCCESS) {
+        LOG_ERROR("Failed to create text field %s file for table %s",
+                  field->name(), name);
+        return rc;
+      }
+    }
+  }
+
   std::fstream fs;
   fs.open(path, std::ios_base::out | std::ios_base::binary);
   if (!fs.is_open()) {
@@ -137,6 +155,29 @@ RC Table::open(const char *meta_file, const char *base_dir) {
   RC rc = init_record_handler(base_dir);
 
   base_dir_ = base_dir;
+
+  const int text_field_num = table_meta_.text_field_num();
+  for (int i = 0; i < text_field_num; i++) {
+    const TextFieldMeta *text_field_meta = table_meta_.text_field(i);
+    if (text_field_meta == nullptr) {
+      LOG_PANIC(
+        "Found invalid text field meta info which has a non-exists field. "
+        "table=%s, field=%s",
+        name(), text_field_meta->name());
+      return RC::GENERIC_ERROR;
+    }
+    Text *text = new Text;
+    std::string text_file = text_data_file(base_dir_.c_str(), name(), text_field_meta->name());
+    rc = text->open(text_file.c_str(), *text_field_meta);
+    if (rc != RC::SUCCESS) {
+      delete text;
+      LOG_ERROR(
+        "Failed to open text file. table=%s,  file=%s, rc=%d:%s",
+        name(), text_file.c_str(), rc, strrc(rc));
+      return rc;
+    }
+    texts_.push_back(text);
+  }
 
   const int index_num = table_meta_.index_num();
   for (int i = 0; i < index_num; i++) {
@@ -386,12 +427,117 @@ RC Table::make_record(int value_num, const Value *values, char *&record_out) {
     const FieldMeta *field =
       table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    if (convert_type(value.type, value.data, field->type(),
+    if (convert_type(field->name(), value.type, value.data, field->type(),
                      record + field->offset(), field->len(), value.is_null) != RC::SUCCESS) {
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
   record_out = record;
+  return RC::SUCCESS;
+}
+
+Text* Table::text(int index) {
+  if (index < 0 || index >= texts_.size()) {
+    return nullptr;
+  }
+  return texts_[index];
+}
+
+RC Table::convert_type(const char *field_name, AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null) {
+  // 数据部分长度为 len - 1
+  // 剩下 1 字节表示是否为 NULL
+  // 读取的 NULL 并未获取到类型，所以得先判断
+  len = len - 1;
+  if (is_null) {
+    memset(dest_data, 0, len);
+    *((char *)dest_data + len) = (char)true;
+    return RC::SUCCESS;
+  }
+  if (!is_type_convertable(src_type, dest_type)) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+  switch (dest_type) {
+    // INTS FLOATS 考虑隐式转换
+    case INTS: {
+      if (src_type == FLOATS) {
+        float origin = *(float *) src_data;
+        int convert = (int) origin;
+        memcpy(dest_data, &convert, len);
+      } else {
+        memcpy(dest_data, src_data, len);
+      }
+      break;
+    }
+    case FLOATS: {
+      if (src_type == INTS) {
+        int origin = *(int *) src_data;
+        float convert = (float) origin;
+        memcpy(dest_data, &convert, len);
+      } else {
+        memcpy(dest_data, src_data, len);
+      }
+      break;
+    }
+    case CHARS: {
+      memcpy(dest_data, src_data, std::min(len, (int)strlen(static_cast<char *>(src_data)) + 1));
+      break;
+    }
+    case DATES: {
+      try {
+        Date date = Date(static_cast<char *>(src_data));
+        time_t date_time_t = date.get_inner_date_time_t();
+        memcpy(dest_data, &date_time_t, len);
+      } catch (const char *e) {
+        LOG_ERROR("Invalid value data to create a Date type. e=%s",
+                  e);
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+      break;
+    }
+    case TEXTS: {
+      TextHeader text_header;
+      text_header.remain_content_page_num = BP_INVALID_PAGE_NUM;
+      const char *text_data = (char *)src_data;
+      int text_len = strlen(text_data);
+      if (text_len > MAX_TEXT_SIZE) {
+        text_len = MAX_TEXT_SIZE;
+      }
+      text_header.length = text_len;
+      if (text_len <= TEXT_PREVIOUS_DATA_SIZE) {
+        memcpy(text_header.previous_content, text_data, text_len);
+      } else {
+        memcpy(text_header.previous_content, text_data, TEXT_PREVIOUS_DATA_SIZE);
+        int text_field_num = table_meta_.text_field_num();
+        int i = 0;
+        for (i = 0; i < text_field_num; i++) {
+          const TextFieldMeta *text_field_meta = table_meta_.text_field(i);
+          if (text_field_meta == nullptr) {
+            return RC::SCHEMA_FIELD_MISSING;
+          }
+          if (0 == strcmp(text_field_meta->name(), field_name)) {
+            break;
+          }
+        }
+        if (i == text_field_num) {
+          return RC::SCHEMA_FIELD_MISSING;
+        }
+        Text *text = texts_[i];
+        int page_num = 0;
+        RC rc = text->insert_content(text_data + TEXT_PREVIOUS_DATA_SIZE, text_len - TEXT_PREVIOUS_DATA_SIZE, &page_num);
+        if (rc != RC::SUCCESS) {
+          LOG_ERROR("Failed to insert text content. rc=%d:%s", rc, strrc(rc));
+          return rc;
+        }
+        text_header.remain_content_page_num = page_num;
+      }
+      memcpy(dest_data, &text_header, len);
+      break;
+    }
+    default:
+      memcpy(dest_data, src_data, len);
+  }
+  // 最后一个字节表示是否是 null
+  *((char *)dest_data + len) = (char)false;
   return RC::SUCCESS;
 }
 
@@ -802,7 +948,7 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
   }
   void *data = new char[field_to_update->len()];
   // 需要做隐式转换
-  if (convert_type(value->type, value->data, field_to_update->type(),
+  if (convert_type(attribute_name, value->type, value->data, field_to_update->type(),
                    data, field_to_update->len(), value->is_null) != RC::SUCCESS) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
@@ -932,6 +1078,27 @@ RC Table::delete_record(Trx *trx, ConditionFilter *filter, int *deleted_count) {
 
 RC Table::delete_record(Trx *trx, Record *record) {
   RC rc = RC::SUCCESS;
+ int field_num = table_meta_.field_num();
+ for (int i = 0; i < field_num; i++) {
+   const FieldMeta *field = table_meta_.field(i);
+   if (field->type() == TEXTS) {
+     int index = table_meta_.text_field_index(field->name());
+     if (index == -1) {
+       continue;
+     }
+     TextHeader text_header;
+     memcpy(&text_header, record->data + field->offset(), field->len() - 1);
+     if (text_header.remain_content_page_num == -1) {
+       continue;
+     }
+     Text *text = texts_[index];
+     rc = text->delete_content(text_header.remain_content_page_num);
+     if (rc != RC::SUCCESS) {
+       LOG_ERROR("Failed to delete text data. rc=%d:%s", rc, strrc(rc));
+       return rc;
+     }
+   }
+ }
   if (trx != nullptr) {
     rc = trx->delete_record(this, record);
   } else {
@@ -960,7 +1127,6 @@ RC Table::commit_delete(Trx *trx, const RID &rid) {
     LOG_ERROR("Failed to delete indexes of record(rid=%d.%d). rc=%d:%s",
           rid.page_num, rid.slot_num, rc, strrc(rc));  // panic?
   }
-
   rc = record_handler_->delete_record(&rid);
   if (rc != RC::SUCCESS) {
     return rc;
@@ -1086,6 +1252,16 @@ RC Table::sync() {
     return rc;
   }
 
+  for (Text *text: texts_) {
+    rc = text->sync();
+    if (rc != RC::SUCCESS) {
+        LOG_ERROR(
+        "Failed to flush text's pages. table=%s, text field=%s, rc=%d:%s",
+        name(), text->meta().name(), rc, strrc(rc));
+      return rc; 
+    }
+  }
+
   for (Index *index : indexes_) {
     rc = index->sync();
     if (rc != RC::SUCCESS) {
@@ -1097,4 +1273,35 @@ RC Table::sync() {
   }
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
+}
+
+RC Table::create_text_field(const char *base_dir, const char *text_field_name) {
+  if (text_field_name == nullptr || common::is_blank(text_field_name)) {
+    return RC::INVALID_ARGUMENT;
+  }
+  TextFieldMeta new_text_field;
+  RC rc = new_text_field.init(text_field_name);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+  Text *text = new Text;
+  std::string text_file = text_data_file(base_dir, name(), text_field_name);
+  rc = text->create(text_file.c_str(), new_text_field);
+  if (rc != RC::SUCCESS) {
+    delete text;
+    LOG_ERROR("Failed to create text field. file name=%s, rc=%d:%s", text_file.c_str(), rc, strrc(rc));
+    return rc;
+  }
+  texts_.push_back(text);
+  table_meta_.add_text_field(new_text_field);
+  return RC::SUCCESS;
+}
+
+RC Table::remove_text_files() {
+  for (int i = 0; i < table_meta_.text_field_num(); i++) {
+    texts_[i]->close();
+    std::string text_file = text_data_file(base_dir_.c_str(), name(), table_meta_.text_field(i)->name());
+    remove(text_file.c_str());
+  }
+  return RC::SUCCESS;
 }

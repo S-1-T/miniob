@@ -22,6 +22,7 @@ See the Mulan PSL v2 for more details. */
 #define MAX_ATTR_NAME 20
 #define MAX_ERROR_MESSAGE 20
 #define MAX_DATA 50
+#define TEXT_PREVIOUS_DATA_SIZE (32 - 2 * sizeof(int))
 
 // 聚合函数类型
 typedef enum  {
@@ -75,7 +76,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型, NULL_ 本身不是个类型，只是用来比较
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, NULL_, SELECTS, TUPLESET } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES, TEXTS, NULL_, SELECTS, TUPLESET } AttrType;
 
 //属性值
 typedef struct _Value {
@@ -182,6 +183,13 @@ typedef struct {
   const char *relation_name;
   const char *file_name;
 } LoadData;
+
+// TEXT 在 record 中存的实际内容
+typedef struct {
+  int length; /* 不包含 `/0` */
+  int remain_content_page_num;
+  char previous_content[TEXT_PREVIOUS_DATA_SIZE];
+} TextHeader;
 
 union Queries {
   Selects selection;

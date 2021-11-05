@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/log/log.h"
 #include "storage/common/table.h"
+#include "storage/common/text.h"
 
 Tuple::Tuple(const Tuple &other) {
   LOG_PANIC("Copy constructor of tuple is not supported");
@@ -75,6 +76,9 @@ void Tuple::add(const char *s, int len, AggregationType aggregation_type, bool i
   add(new StringValue(s, len, aggregation_type, is_null));
 }
 
+void Tuple::add(const char *s, int len, AggregationType aggregation_type, bool is_null, bool text) {
+  add(new TextValue(s, len, aggregation_type, is_null));
+}
 ////////////////////////////////////////////////////////////////////////////////
 
 std::string TupleField::to_string() const {
@@ -302,6 +306,54 @@ void TupleRecordConverter::add_record(const char *record) {
       case CHARS: {
         const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
         tuple.add(s, strlen(s), aggregation_type, is_null);
+      } break;
+      case TEXTS: {
+        TextHeader text_header;
+        memcpy(&text_header, record + field_meta->offset(), field_meta->len() - 1); /* 去掉一位表示 null 的字节 */
+        char *content = new char[text_header.length + 1];
+        content[text_header.length] = '\0';
+        if (text_header.remain_content_page_num == -1) {
+          memcpy(content, text_header.previous_content, text_header.length);
+        } else {
+          memcpy(content, text_header.previous_content, TEXT_PREVIOUS_DATA_SIZE);
+          const TableMeta &table_meta = table_->table_meta();
+          int text_field_num = table_meta.text_field_num();
+          int i = 0;
+          for (i = 0; i < text_field_num; i++) {
+            const TextFieldMeta *text_field_meta = table_meta.text_field(i);
+            if (text_field_meta == nullptr) {
+              LOG_PANIC("text field is null");
+              delete[] content;
+              tuple.add("", 0, aggregation_type, is_null, true);
+              break;
+            }
+            if (0 == strcmp(text_field_meta->name(), field_meta->name())) {
+              break;
+            }
+          }
+          if (i == text_field_num) {
+            LOG_PANIC("text field not found");
+            delete[] content;
+            tuple.add("", 0, aggregation_type, is_null, true);
+            break;
+          }
+          Text *text = table_->text(i);
+          if (text == nullptr) {
+            LOG_PANIC("text field not found");
+            delete[] content;
+            tuple.add("", 0, aggregation_type, is_null, true);
+            break;
+          }
+          RC rc = text->get_content(content + TEXT_PREVIOUS_DATA_SIZE, text_header.length - TEXT_PREVIOUS_DATA_SIZE, text_header.remain_content_page_num);
+          if (rc != RC::SUCCESS) {
+            LOG_PANIC("get text content failed. rc=%d:%s", rc, strrc(rc));
+            delete[] content;
+            tuple.add("", 0, aggregation_type, is_null, true);
+            break;
+          }
+        }
+        tuple.add(content, text_header.length, aggregation_type, is_null, true);
+        delete[] content;
       } break;
       default: {
         LOG_PANIC("Unsupported field type. type=%d", field_meta->type());

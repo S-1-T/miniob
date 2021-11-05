@@ -392,7 +392,7 @@ RC RecordFileHandler::insert_record(const char *data, int record_size, RID *rid)
   if (!page_found) {
     BPPageHandle page_handle;
     if ((ret = disk_buffer_pool_->allocate_page(file_id_, &page_handle)) != RC::SUCCESS) {
-      LOG_ERROR("Failed to allocate page while inserting record. file_it:%d, ret:%d",
+      LOG_ERROR("Failed to allocate page while inserting record. file_id:%d, ret:%d",
                 file_id_, ret);
       return ret;
     }

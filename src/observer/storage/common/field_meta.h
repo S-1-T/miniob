@@ -53,4 +53,18 @@ private:
   bool         visible_;
   bool         nullable_;
 };
+
+class TextFieldMeta {
+public:
+  TextFieldMeta();
+  ~TextFieldMeta() = default;
+
+  RC init(const char *name);
+  const char *name() const;
+  void to_json(Json::Value &json_value) const;
+  static RC from_json(const Json::Value &json_value, TextFieldMeta &text);
+private:
+  std::string name_;
+};
+
 #endif // __OBSERVER_STORAGE_COMMON_FIELD_META_H__

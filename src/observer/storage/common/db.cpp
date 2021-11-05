@@ -92,12 +92,15 @@ RC Db::drop_table(const char *table_name) {
   }
 
   rc = table->close();
+  
+  // 删除存储 text 字段数据的文件
+  table->remove_text_files();
+
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to close table file (%s). error=%d:%s", name(), rc, strrc(rc));
     return rc;
   }
   opened_tables_.erase(table->name());
-
   std::string table_file_path = table_meta_file(path_.c_str(), table->name());
   std::string data_file = path_ + "/" + table->name() + TABLE_DATA_SUFFIX;
   remove(table_file_path.c_str());

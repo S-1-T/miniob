@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "storage/common/field_meta.h"
+#include "common/lang/string.h"
 #include "common/log/log.h"
 
 #include "json/json.h"
@@ -29,11 +30,12 @@ const char *ATTR_TYPE_NAME[] = {
   "chars",
   "ints",
   "floats",
-  "dates"
+  "dates",
+  "texts"
 };
 
 const char *attr_type_to_string(AttrType type) {
-  if (type >= UNDEFINED && type <= DATES) {
+  if (type >= UNDEFINED && type <= TEXTS) {
     return ATTR_TYPE_NAME[type];
   }
   return "unknown";
@@ -167,4 +169,31 @@ RC FieldMeta::from_json(const Json::Value &json_value, FieldMeta &field) {
   bool visible = visible_value.asBool();
   bool nullable = nullable_value.asBool();
   return field.init(name, type, offset, len, visible, nullable);
+}
+
+TextFieldMeta::TextFieldMeta() {}
+
+RC TextFieldMeta::init(const char *name) {
+  if (nullptr == name || common::is_blank(name)) {
+    return RC::INVALID_ARGUMENT;
+  }
+  name_ = name;
+  return RC::SUCCESS;
+}
+
+const char *TextFieldMeta::name() const {
+  return name_.c_str();
+}
+
+void TextFieldMeta::to_json(Json::Value &json_value) const {
+  json_value[FIELD_NAME] = name_;
+}
+
+RC TextFieldMeta::from_json(const Json::Value &json_value, TextFieldMeta &text) {
+  const Json::Value &name_value = json_value[FIELD_NAME];
+  if (!name_value.isString()) {
+    LOG_ERROR("text field name is not a string. json value=%s", name_value.toStyledString().c_str());
+    return RC::GENERIC_ERROR;
+  }
+  return text.init(name_value.asCString());
 }

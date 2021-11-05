@@ -33,8 +33,8 @@ public:
   void swap(TableMeta &other) noexcept;
 
   RC init(const char *name, int field_num, const AttrInfo attributes[]);
-
   RC add_index(const IndexMeta &index);
+  RC add_text_field(const TextFieldMeta &text_field);
   RC remove_index(const IndexMeta &index);
 
 public:
@@ -45,6 +45,9 @@ public:
   const FieldMeta * find_field_by_offset(int offset) const;
   int field_num() const;
   int sys_field_num() const;
+  int text_field_num() const;
+  const TextFieldMeta * text_field(int index) const;
+  int text_field_index(const char *name) const;
 
   const IndexMeta * index(const char *name) const;
   const IndexMeta * find_index_by_field(const char *field) const;
@@ -65,6 +68,7 @@ private:
 private:
   std::string   name_;
   std::vector<FieldMeta>  fields_; // 包含sys_fields
+  std::vector<TextFieldMeta> text_fields_;
   std::vector<IndexMeta>  indexes_;
 
   int  record_size_ = 0;
