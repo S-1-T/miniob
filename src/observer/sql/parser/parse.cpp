@@ -174,6 +174,10 @@ void selects_append_order_by(Selects *selects, OrderBy *order_by) {
   selects->order_bys[selects->order_by_num++] = *order_by;
 }
 
+void selects_append_group_by(Selects *selects, RelAttr *rel_attr) {
+  selects->group_bys[selects->group_by_num++] = *rel_attr;
+}
+
 void selects_destroy(Selects *selects) {
   for (size_t i = 0; i < selects->attr_num; i++) {
     relation_attr_destroy(&selects->attributes[i]);
@@ -195,6 +199,11 @@ void selects_destroy(Selects *selects) {
     order_attr_destroy(&selects->order_bys[i]);
   }
   selects->order_by_num = 0;
+
+  for (size_t i = 0; i < selects->group_by_num; i++) {
+    relation_attr_destroy(&selects->group_bys[i]);
+  }
+  selects->group_by_num = 0;
 }
 
 void insert_tuple_init(InsertTuple *tuple, Value values[], size_t value_num) {
