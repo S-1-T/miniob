@@ -19,11 +19,13 @@ typedef struct ParserContext {
   size_t from_length[MAX_NUM];
   size_t value_length[MAX_NUM];
   size_t tuple_num;
+  size_t index_attr_num;
   Value values[MAX_NUM];
   InsertTuple tuples[MAX_NUM];
   Condition conditions[MAX_NUM][MAX_NUM];
   Selects selects[MAX_NUM];
   char id[MAX_NUM];
+  char *index_attrs[MAX_NUM];
 } ParserContext;
 
 //获取子串
@@ -54,6 +56,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->tuple_num = 0;
 //  context->ssql->sstr.insertion.value_num = 0;
   context->ssql->sstr.errors = str;
+  context->index_attr_num = 0;
   printf("parse sql failed. error=%s\n", str);
 }
 
@@ -241,17 +244,30 @@ desc_table:
     ;
 
 create_index:		/*create index 语句的语法解析树*/
-    CREATE INDEX ID ON ID LBRACE ID RBRACE SEMICOLON 
+    CREATE INDEX ID ON ID LBRACE ID index_attr_list RBRACE SEMICOLON 
         {
             CONTEXT->ssql->flag = SCF_CREATE_INDEX;//"create_index";
-            create_index_init(&CONTEXT->ssql->sstr.create_index, $3, $5, $7, 0);
+            CONTEXT->index_attrs[CONTEXT->index_attr_num++] = $7;
+            create_index_init(&CONTEXT->ssql->sstr.create_index, $3, $5, 
+                CONTEXT->index_attrs, CONTEXT->index_attr_num, 0);
+            CONTEXT->index_attr_num = 0;
         }
-    | CREATE UNIQUE INDEX ID ON ID LBRACE ID RBRACE SEMICOLON
+    | CREATE UNIQUE INDEX ID ON ID LBRACE ID index_attr_list RBRACE SEMICOLON
         {
             CONTEXT->ssql->flag = SCF_CREATE_INDEX; //"create_index";
-            create_index_init(&CONTEXT->ssql->sstr.create_index, $4, $6, $8, 1);
+            CONTEXT->index_attrs[CONTEXT->index_attr_num++] = $8;
+            create_index_init(&CONTEXT->ssql->sstr.create_index, $4, $6, 
+                CONTEXT->index_attrs, CONTEXT->index_attr_num, 1);
+            CONTEXT->index_attr_num = 0;
         }
     ;
+
+index_attr_list:
+    /* empty */
+    | COMMA ID index_attr_list
+    {
+        CONTEXT->index_attrs[CONTEXT->index_attr_num++] = $2;
+    }
 
 drop_index:			/*drop index 语句的语法解析树*/
     DROP INDEX ID ON ID SEMICOLON
