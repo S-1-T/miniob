@@ -27,7 +27,7 @@ Tuple::Tuple(const Tuple &other) {
   exit(1);
 }
 
-Tuple::Tuple(Tuple &&other) noexcept : values_(std::move(other.values_)) {}
+Tuple::Tuple(Tuple &&other) noexcept: values_(std::move(other.values_)) {}
 
 Tuple &Tuple::operator=(Tuple &&other) noexcept {
   if (&other == this) {
@@ -57,9 +57,11 @@ Tuple::~Tuple() {}
 
 // add (Value && value)
 void Tuple::add(TupleValue *value) { values_.emplace_back(value); }
+
 void Tuple::add(const std::shared_ptr<TupleValue> &other) {
   values_.emplace_back(other);
 }
+
 void Tuple::add(int value, AggregationType aggregation_type, bool is_null) {
   add(new IntValue(value, aggregation_type, is_null));
 }
@@ -107,7 +109,7 @@ void TupleSchema::add(AttrType type, const char *table_name,
 
 void TupleSchema::add_if_not_exists(AttrType type, const char *table_name,
                                     const char *field_name) {
-  for (const auto &field : fields_) {
+  for (const auto &field: fields_) {
     if (0 == strcmp(field.table_name(), table_name) &&
         0 == strcmp(field.field_name(), field_name)) {
       return;
@@ -119,7 +121,7 @@ void TupleSchema::add_if_not_exists(AttrType type, const char *table_name,
 
 void TupleSchema::append(const TupleSchema &other) {
   fields_.reserve(fields_.size() + other.fields_.size());
-  for (const auto &field : other.fields_) {
+  for (const auto &field: other.fields_) {
     fields_.emplace_back(field);
   }
 }
@@ -186,25 +188,19 @@ TupleSet &TupleSet::operator=(TupleSet &&other) {
   return *this;
 }
 
-void TupleSet::merge(Tuple &&tuple) {
-  if (tuples_.empty()) {
+void TupleSet::merge(Tuple &&tuple, int group_index) {
+  if (tuples_.empty() || group_index == -1) {
     tuples_.emplace_back(std::move(tuple));
     return;
   }
-  // 聚合运算的每一个阶段，tuples_ 都只含有一个 Tuple
+
   const std::vector<std::shared_ptr<TupleValue>> old_values =
-      tuples_[0].values();
+      tuples_[group_index].values();
   int value_idx = 0;
-  for (std::shared_ptr<TupleValue> old_value : old_values) {
-    // 正常扫表而非聚合运算，直接将 tuple 存入
-    if (old_value->aggregation_type() == None) {
-      tuples_.emplace_back(std::move(tuple));
-      return;
-    }
-    // 聚合函数的 Merge 计算
+
+  for (std::shared_ptr<TupleValue> old_value: old_values) {
     old_value->merge(tuple.get(value_idx++));
   }
-  return;
 }
 
 void TupleSet::clear() {
@@ -249,7 +245,7 @@ void TupleSet::print(std::ostream &os, bool multi_table) const {
 
   schema_.print(os, multi_table);
 
-  for (const Tuple &item : tuples_) {
+  for (const Tuple &item: tuples_) {
     const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
     int output_size = schema_.fields().size();
     for (int i = 0; i < output_size - 1; i++) {
@@ -282,84 +278,125 @@ void TupleRecordConverter::add_record(const char *record) {
   const TupleSchema &schema = tuple_set_.schema();
   Tuple tuple;
   const TableMeta &table_meta = table_->table_meta();
-  for (const TupleField &field : schema.fields()) {
-    const FieldMeta *field_meta = table_meta.field(field.field_name());
-    if (field_meta == nullptr && field.aggregation_type() != None) {
-      field_meta = table_meta.field(0);
-    }
-    assert(field_meta != nullptr);
-    const AggregationType aggregation_type = field.aggregation_type();
-    const bool is_null = (bool)((char *)record[field_meta->offset() + field_meta->len() - 1]);
-    switch (field_meta->type()) {
-      case INTS: {
-        int value = *(int *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type, is_null);
-      } break;
-      case FLOATS: {
-        float value = *(float *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type, is_null);
-      } break;
-      case DATES: {
-        time_t value = *(time_t *)(record + field_meta->offset());
-        tuple.add(value, aggregation_type, is_null);
-      } break;
-      case CHARS: {
-        const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
-        tuple.add(s, strlen(s), aggregation_type, is_null);
-      } break;
-      case TEXTS: {
-        TextHeader text_header;
-        memcpy(&text_header, record + field_meta->offset(), field_meta->len() - 1); /* 去掉一位表示 null 的字节 */
-        char *content = new char[text_header.length + 1];
-        content[text_header.length] = '\0';
-        if (text_header.remain_content_page_num == -1) {
-          memcpy(content, text_header.previous_content, text_header.length);
-        } else {
-          memcpy(content, text_header.previous_content, TEXT_PREVIOUS_DATA_SIZE);
-          const TableMeta &table_meta = table_->table_meta();
-          int text_field_num = table_meta.text_field_num();
-          int i = 0;
-          for (i = 0; i < text_field_num; i++) {
-            const TextFieldMeta *text_field_meta = table_meta.text_field(i);
-            if (text_field_meta == nullptr) {
-              LOG_PANIC("text field is null");
-              delete[] content;
-              tuple.add("", 0, aggregation_type, is_null, true);
-              break;
-            }
-            if (0 == strcmp(text_field_meta->name(), field_meta->name())) {
-              break;
-            }
-          }
-          if (i == text_field_num) {
-            LOG_PANIC("text field not found");
-            delete[] content;
-            tuple.add("", 0, aggregation_type, is_null, true);
-            break;
-          }
-          Text *text = table_->text(i);
-          if (text == nullptr) {
-            LOG_PANIC("text field not found");
-            delete[] content;
-            tuple.add("", 0, aggregation_type, is_null, true);
-            break;
-          }
-          RC rc = text->get_content(content + TEXT_PREVIOUS_DATA_SIZE, text_header.length - TEXT_PREVIOUS_DATA_SIZE, text_header.remain_content_page_num);
-          if (rc != RC::SUCCESS) {
-            LOG_PANIC("get text content failed. rc=%d:%s", rc, strrc(rc));
-            delete[] content;
-            tuple.add("", 0, aggregation_type, is_null, true);
+  for (const TupleField &field: schema.fields()) {
+    build_tuple(record, field, table_meta, tuple);
+  }
+
+  int group_index = -1;
+
+  if (tuple_set_.get_schema().isAggregation()) {
+    if (tuple_set_.get_schema().get_group_by_schema() != nullptr) {
+      // 查找tupleSet里对应的group_index；没找到值为-1，直接插入对应tuple
+      for (int i = 0; i < tuple_set_.size(); i++) {
+        bool equal = true;
+        for (const auto &field: tuple_set_.get_schema().get_group_by_schema()->fields()) {
+          const auto &m = tuple_set_.get(i).get(tuple_set_.get_schema().index_of_field(field.table_name(), field.field_name()));
+
+          Tuple t; build_tuple(record, field, table_meta, t);
+          const auto &n = t.get(0);
+
+          if (m.compare_with_op(n, NOT_EQUAL)) {
+            equal = false;
             break;
           }
         }
-        tuple.add(content, text_header.length, aggregation_type, is_null, true);
-        delete[] content;
-      } break;
-      default: {
-        LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
+
+        if (equal) {
+          group_index = i;
+          break;
+        }
       }
+    } else {
+      // 聚合但是没有group by字段
+      group_index = 0;
     }
   }
 
-  tuple_set_.merge(std::move(tuple));
+  tuple_set_.merge(std::move(tuple), group_index);
+}
+
+void TupleRecordConverter::build_tuple(const char *record, const TupleField &field, const TableMeta &table_meta,
+                                       Tuple &tuple) {
+  const FieldMeta *field_meta = table_meta.field(field.field_name());
+  if (field_meta == nullptr && field.aggregation_type() != None) {
+    field_meta = table_meta.field(0);
+  }
+  assert(field_meta != nullptr);
+  const AggregationType aggregation_type = field.aggregation_type();
+  const bool is_null = (bool) ((char *) record[field_meta->offset() + field_meta->len() - 1]);
+  switch (field_meta->type()) {
+    case INTS: {
+      int value = *(int *) (record + field_meta->offset());
+      tuple.add(value, aggregation_type, is_null);
+    }
+      break;
+    case FLOATS: {
+      float value = *(float *) (record + field_meta->offset());
+      tuple.add(value, aggregation_type, is_null);
+    }
+      break;
+    case DATES: {
+      time_t value = *(time_t *) (record + field_meta->offset());
+      tuple.add(value, aggregation_type, is_null);
+    }
+      break;
+    case CHARS: {
+      const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
+      tuple.add(s, strlen(s), aggregation_type, is_null);
+    }
+      break;
+    case TEXTS: {
+      TextHeader text_header;
+      memcpy(&text_header, record + field_meta->offset(), field_meta->len() - 1); /* 去掉一位表示 null 的字节 */
+      char *content = new char[text_header.length + 1];
+      content[text_header.length] = '\0';
+      if (text_header.remain_content_page_num == -1) {
+        memcpy(content, text_header.previous_content, text_header.length);
+      } else {
+        memcpy(content, text_header.previous_content, TEXT_PREVIOUS_DATA_SIZE);
+        const TableMeta &table_meta = table_->table_meta();
+        int text_field_num = table_meta.text_field_num();
+        int i = 0;
+        for (i = 0; i < text_field_num; i++) {
+          const TextFieldMeta *text_field_meta = table_meta.text_field(i);
+          if (text_field_meta == nullptr) {
+            LOG_PANIC("text field is null");
+            delete[] content;
+            tuple.add("", 0, aggregation_type, is_null, true);
+            break;
+          }
+          if (0 == strcmp(text_field_meta->name(), field_meta->name())) {
+            break;
+          }
+        }
+        if (i == text_field_num) {
+          LOG_PANIC("text field not found");
+          delete[] content;
+          tuple.add("", 0, aggregation_type, is_null, true);
+          break;
+        }
+        Text *text = table_->text(i);
+        if (text == nullptr) {
+          LOG_PANIC("text field not found");
+          delete[] content;
+          tuple.add("", 0, aggregation_type, is_null, true);
+          break;
+        }
+        RC rc = text->get_content(content + TEXT_PREVIOUS_DATA_SIZE, text_header.length - TEXT_PREVIOUS_DATA_SIZE,
+                                  text_header.remain_content_page_num);
+        if (rc != RC::SUCCESS) {
+          LOG_PANIC("get text content failed. rc=%d:%s", rc, strrc(rc));
+          delete[] content;
+          tuple.add("", 0, aggregation_type, is_null, true);
+          break;
+        }
+      }
+      tuple.add(content, text_header.length, aggregation_type, is_null, true);
+      delete[] content;
+    }
+      break;
+    default: {
+      LOG_PANIC("Unsupported field type. type=%d", field_meta->type());
+    }
+  }
 }

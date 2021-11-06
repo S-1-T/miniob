@@ -351,7 +351,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       return RC::MISMATCH;
     }
     if (left_is_attr && left_table_name != nullptr &&
-      nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
+        nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
       LOG_WARN("left attr [%s] is not exist in [%s]", left_attr_name, left_table_name);
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
@@ -391,6 +391,9 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       }
     }
   }
+
+  //TODO:: group by合法性检查， 与select部分基本相同， 但是字段只能是 “聚合或者group by字段”
+
   return RC::SUCCESS;
 }
 
@@ -612,7 +615,8 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
 
 // 超出 6 个参数，
 // 直接通过参数存取 value_num 的性能与每次计算 value_num 的性能谁更高未知
-RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions, std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index) {
+RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions,
+             std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index) {
 
   /*
    * schema 的结构为： tuple_sets 中 schema 的倒续连接 + 直接要输出的 schema
@@ -661,7 +665,9 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
       // 只加入要 select 的字段
       output_tuple.add(output_value[i]);
     }
-    output.merge(std::move(output_tuple));
+
+    //TODO: 多表处理
+    output.merge(std::move(output_tuple), -1);
     return RC::SUCCESS;
   }
   for (int i = 0; i < current_set.size(); i++) {
@@ -706,18 +712,26 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
                                            Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
+  TupleSchema *group_by_schema = new TupleSchema;
+
   const char *table_name = table->name();
-  // TODO: GROUP BY 支持
+
   bool has_aggregation = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (attr.aggregation_type != None)
       has_aggregation = true;
   }
+  schema.setAggregation(has_aggregation);
+
+  for (int i = selects.group_by_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.group_bys[i];
+    schema_add_field(table, attr.attribute_name, attr.aggregation_type, *group_by_schema);
+  }
+  schema.set_group_by_schema(group_by_schema);
+
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
-    if (attr.aggregation_type == None && has_aggregation)
-      return RC::SCHEMA_FIELD_NAME_ILLEGAL;
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
       if (0 == strcmp("*", attr.attribute_name)) {
         if (attr.aggregation_type != None) {
@@ -756,7 +770,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
         (condition.left_is_attr == 1 && condition.right_is_attr == 0 && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
         (condition.left_is_attr == 0 && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名
         (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
-            match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
+         match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
         ) {
       DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
       RC rc = condition_filter->init(*table, condition);
@@ -769,7 +783,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       }
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
-      condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
+               condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
       // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);

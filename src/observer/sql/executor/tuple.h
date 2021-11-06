@@ -17,13 +17,14 @@ See the Mulan PSL v2 for more details. */
 
 #include <memory>
 #include <vector>
+#include <storage/common/table_meta.h>
 
 #include "sql/executor/value.h"
 
 class Table;
 
 class Tuple {
- public:
+public:
   Tuple() = default;
 
   Tuple(const Tuple &other);
@@ -103,11 +104,22 @@ class TupleSchema {
   void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table) const;
+
+  void setAggregation(bool isAggregation) { isAggregation_ = isAggregation; }
+
+  bool isAggregation() const { return isAggregation_; }
+
+  void set_group_by_schema(TupleSchema *schema) { group_by_schema_ = std::shared_ptr<TupleSchema>(schema); }
+
+  TupleSchema *get_group_by_schema() const { return group_by_schema_.get(); }
+
 public:
   static void from_table(const Table *table, TupleSchema &schema);
 
  private:
   std::vector<TupleField> fields_;
+  bool isAggregation_{false};
+  std::shared_ptr<TupleSchema> group_by_schema_;
 };
 
 class TupleSet {
@@ -123,7 +135,7 @@ class TupleSet {
 
   const TupleSchema &get_schema() const;
 
-  void merge(Tuple &&tuple);
+  void merge(Tuple &&tuple, int group_index);
 
   void clear();
 
@@ -152,6 +164,7 @@ class TupleRecordConverter {
  private:
   Table *table_;
   TupleSet &tuple_set_;
+  void build_tuple(const char *record, const TupleField &field, const TableMeta &table_meta, Tuple &tuple);
 };
 
 #endif  //__OBSERVER_SQL_EXECUTOR_TUPLE_H_
