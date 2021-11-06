@@ -1282,7 +1282,12 @@ IndexScanner *Table::find_multi_index_for_scan(const CompositeConditionFilter &f
       }
       if (0 == strcmp(field_cond_meta->name(), field_name.c_str())) {
         find = true;
-        memcpy(pkey + offset, value_cond_desc->value, field_cond_meta->len() - 1); // 去除表示 null 的一字节
+        if (value_cond_desc->is_null) {
+          memset(pkey + offset, 0, field_cond_meta->len());
+          *(pkey + offset + field_cond_meta->len() - 1) = 1;
+        } else {
+          memcpy(pkey + offset, value_cond_desc->value, field_cond_meta->len() - 1); // 去除表示 null 的一字节
+        }
         offset += field_cond_meta->len();
         if (comp_op == EQUAL_TO) {
           comp_op = default_condition_filter->comp_op();
@@ -1316,11 +1321,7 @@ IndexScanner *Table::find_index_for_scan(const ConditionFilter *filter) {
   const CompositeConditionFilter *composite_condition_filter =
     dynamic_cast<const CompositeConditionFilter *>(filter);
   if (composite_condition_filter != nullptr) {
-    /* 先看是否有多列索引 */
-    IndexScanner *scanner = find_multi_index_for_scan(*composite_condition_filter);
-    if (scanner != nullptr) {
-      return scanner;
-    }
+    /* 先看是否有单列索引 */
     int filter_num = composite_condition_filter->filter_num();
     for (int i = 0; i < filter_num; i++) {
       IndexScanner *scanner =
@@ -1328,6 +1329,11 @@ IndexScanner *Table::find_index_for_scan(const ConditionFilter *filter) {
       if (scanner != nullptr) {
         return scanner;  // 可以找到一个最优的，比如比较符号是=
       }
+    }
+    /* 再看是否有多列索引 */
+    IndexScanner *scanner = find_multi_index_for_scan(*composite_condition_filter);
+    if (scanner != nullptr) {
+      return scanner;
     }
   }
   return nullptr;
