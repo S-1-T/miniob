@@ -254,6 +254,39 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
     }
     tables[i] = table;
   }
+
+  // 检测 group by 中的字段是否合法
+  for (size_t i = 0; i < selects.group_by_num; i++) {
+    const RelAttr &group_by_attr = selects.group_bys[i];
+    if (group_by_attr.relation_name != nullptr) {
+      Table *t = nullptr;
+      for (size_t j = 0; j < selects.relation_num; j++) {
+        if (0 == strcmp(group_by_attr.relation_name, selects.relations[j])) {
+          t = tables[j];
+          break;
+        }
+      }
+      if (t == nullptr) {
+        LOG_WARN("Table [%s] is not in group bys' relations", group_by_attr.relation_name);
+        return RC::MISMATCH;
+      }
+      if (nullptr == t->table_meta().field(group_by_attr.attribute_name)) {
+        LOG_WARN("No such field [%s] in table [%s]", group_by_attr.attribute_name, group_by_attr.relation_name);
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    } else if (group_by_attr.is_num == 0 && 0 != strcmp("*", group_by_attr.attribute_name)) {
+      // 检测二义性
+      size_t idx = 0;
+      RC rc = check_ambiguous(selects.relation_num, tables, group_by_attr.attribute_name, idx);
+      if (RC::SUCCESS != rc) {
+        return rc;
+      }
+    } else {
+      LOG_WARN("Group by field [%s] invalid", group_by_attr.attribute_name);
+      return RC::MISMATCH;
+    }
+  }
+
   // 检测 attr 中的 table 是否存在于要查找的 tables 中
   // 以及 attr 是否存在于此 table 的 fields 中
   // 并为多表查询构造 output_schema
@@ -300,6 +333,21 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       // 权宜之计，不适用于多表
       auto field = tables[0]->table_meta().field(0);
       output_schema.add(field->type(), tables[0]->name(), attr.attribute_name, attr.aggregation_type);
+    }
+    /* 如果有 group by，非聚合字段必须存在 group by 中 */
+    if (attr.aggregation_type == AggregationType::None) {
+      bool exist = false;
+      for (size_t j = 0; j < selects.group_by_num; j++) {
+        const RelAttr &group_by_attr = selects.group_bys[j];
+        if (0 == strcmp(attr.attribute_name, group_by_attr.attribute_name)) {
+          exist = true;
+          break;
+        }
+      }
+      if (selects.group_by_num > 0 && !exist) {
+        LOG_WARN("select attr %s is not in group bys", attr.attribute_name);
+        return RC::MISMATCH;
+      }
     }
   }
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
@@ -722,7 +770,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
     if (attr.aggregation_type != None)
       has_aggregation = true;
   }
-  schema.setAggregation(has_aggregation);
+  schema.setAggregation(has_aggregation || selects.group_by_num > 0);
 
   for (int i = selects.group_by_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.group_bys[i];
