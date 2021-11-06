@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 class DiskBufferPool;
 class RecordFileHandler;
 class ConditionFilter;
+class CompositeConditionFilter;
 class DefaultConditionFilter;
 struct Record;
 struct RID;
@@ -59,7 +60,7 @@ public:
 
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, void (*record_reader)(const char *data, void *context));
 
-  RC create_index(Trx *trx, const char *index_name, const char *attribute_name, bool is_unique);
+  RC create_index(Trx *trx, const char *index_name, const char *attribute_names[], size_t attr_num, bool is_unique);
   RC drop_index(Trx *trx, const char *index_name);
 
 public:
@@ -83,7 +84,8 @@ private:
   RC scan_record(Trx *trx, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
   RC scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter *filter, int limit, void *context, RC (*record_reader)(Record *record, void *context));
   IndexScanner *find_index_for_scan(const ConditionFilter *filter);
-  IndexScanner *find_index_for_scan(const DefaultConditionFilter &filter);
+  IndexScanner *find_single_index_for_scan(const DefaultConditionFilter &filter);
+  IndexScanner *find_multi_index_for_scan(const CompositeConditionFilter &filter);
 
   RC convert_type(const char *field_name, AttrType src_type, void *src_data, AttrType dest_type, void *dest_data, int len, bool is_null);
 
