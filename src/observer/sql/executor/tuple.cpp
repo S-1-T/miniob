@@ -189,18 +189,17 @@ TupleSet &TupleSet::operator=(TupleSet &&other) {
 }
 
 void TupleSet::merge(Tuple &&tuple, int group_index) {
-  if (tuples_.empty() || group_index == -1) {
-    tuples_.emplace_back(std::move(tuple));
-    return;
-  }
+    if (tuples_.empty() || group_index == -1) {
+      tuples_.emplace_back(std::move(tuple));
+      return;
+    }
+    const std::vector<std::shared_ptr<TupleValue>> old_values =
+        tuples_[group_index].values();
+    int value_idx = 0;
 
-  const std::vector<std::shared_ptr<TupleValue>> old_values =
-      tuples_[group_index].values();
-  int value_idx = 0;
-
-  for (std::shared_ptr<TupleValue> old_value: old_values) {
-    old_value->merge(tuple.get(value_idx++));
-  }
+    for (std::shared_ptr<TupleValue> old_value: old_values) {
+      old_value->merge(tuple.get(value_idx++));
+    }
 }
 
 void TupleSet::clear() {
@@ -289,13 +288,14 @@ void TupleRecordConverter::add_record(const char *record) {
       // 查找tupleSet里对应的group_index；没找到值为-1，直接插入对应tuple
       for (int i = 0; i < tuple_set_.size(); i++) {
         bool equal = true;
+
         for (const auto &field: tuple_set_.get_schema().get_group_by_schema()->fields()) {
           const auto &m = tuple_set_.get(i).get(tuple_set_.get_schema().index_of_field(field.table_name(), field.field_name()));
 
           Tuple t; build_tuple(record, field, table_meta, t);
           const auto &n = t.get(0);
 
-          if (m.compare_with_op(n, NOT_EQUAL)) {
+          if (m.compare_with_op(n, EQUAL_TO)) {
             equal = false;
             break;
           }
@@ -310,6 +310,11 @@ void TupleRecordConverter::add_record(const char *record) {
       // 聚合但是没有group by字段
       group_index = 0;
     }
+  }
+
+  // 多表，投影时再处理group by
+  if (tuple_set_.get_schema().schemaFromMulti()) {
+    group_index = -1;
   }
 
   tuple_set_.merge(std::move(tuple), group_index);

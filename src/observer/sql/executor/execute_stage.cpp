@@ -440,8 +440,6 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
     }
   }
 
-  //TODO:: group by合法性检查， 与select部分基本相同， 但是字段只能是 “聚合或者group by字段”
-
   return RC::SUCCESS;
 }
 
@@ -454,7 +452,9 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   Trx *trx = session->current_trx();
   Selects &selects = sql->sstr.selection;
   Table *tables[selects.relation_num];
+  auto group_by_schema = std::make_shared<TupleSchema>();
   TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
+  output_schema.set_group_by_schema(group_by_schema);
   rc = selects_meta_check(db, selects, tables, output_schema);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Selection meta test failed");
@@ -465,7 +465,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
     SelectExeNode *select_node = new SelectExeNode;
-    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node);
+    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node, output_schema);
     if (rc != RC::SUCCESS) {
       delete select_node;
       for (SelectExeNode *&tmp_node: select_nodes) {
@@ -529,7 +529,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
       output.sort(selects.order_bys, selects.order_by_num);
     }
     // 当前只查询一张表，直接返回结果即可
-//    output.set_schema(output_schema);
     output.print(ss, false);
   }
 
@@ -568,7 +567,7 @@ RC ExecuteStage::do_subSelect(const char *db, Selects &selects, SessionEvent *se
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
     SelectExeNode *select_node = new SelectExeNode;
-    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node);
+    rc = create_selection_executor(trx, db, session_event, selects, tables[i], *select_node, output_schema);
     if (rc != RC::SUCCESS) {
       delete select_node;
       for (SelectExeNode *&tmp_node: select_nodes) {
@@ -654,8 +653,19 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
   }
   // 冗余处理
   new_schema.append(output_schema);
+  new_schema.setAggregation(output_schema.isAggregation());
+  new_schema.set_group_by_schema(output_schema.get_group_by_schema());
   output = TupleSet(new_schema);
+
   auto *values = new std::shared_ptr<TupleValue>[new_schema.fields().size()];
+
+  std::cout << tuple_sets.size();
+
+  for (int i=0; i<tuple_sets.size(); i++) {
+    std::cout << "\t" << tuple_sets.at(i).size();
+  }
+  std::cout << "\n";
+
   rc = cartesian(tuple_sets, condition_num, conditions, values, 0, output, table_num - 1);
   delete[] values;
   return rc;
@@ -665,7 +675,12 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
 // 直接通过参数存取 value_num 的性能与每次计算 value_num 的性能谁更高未知
 RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions,
              std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index) {
-
+  std::cout << "\nvalue :";
+  for (int i=0; i< value_num; i++) {
+    values[i]->to_string(std::cout);
+    std::cout << "\t";
+  }
+  std::cout << "\n";
   /*
    * schema 的结构为： tuple_sets 中 schema 的倒续连接 + 直接要输出的 schema
    * 例如：
@@ -679,7 +694,7 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
    * 由此完成 Projection 操作。
    */
   auto &schema = output.schema();
-  auto &current_set = tuple_sets[index];
+  const TupleSet &current_set = tuple_sets[index];
   if (value_num > 0) {
     // 对笛卡尔积生成的结果做条件过滤, 判断 condition，便于提前剪枝
     for (int i = 0; i < condition_num; i++) {
@@ -714,8 +729,55 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
       output_tuple.add(output_value[i]);
     }
 
-    //TODO: 多表处理
-    output.merge(std::move(output_tuple), -1);
+    std::cout <<" before group : ";
+    tuple_sets.at(0).get(0).get(0).to_string(std::cout);
+    std::cout << "\n";
+    int group_index = -1;
+    if (output.get_schema().isAggregation()) {
+      if (output.get_schema().get_group_by_schema() != nullptr) {
+        for (int i = 0; i < output.size(); i++) {
+          bool equal = true;
+
+          for (const auto& field : output.get_schema().get_group_by_schema()->fields()) {
+            int field_index = -1;
+
+            for (int i = output_num; i < schema.fields().size(); i++) {
+              if (0 == strcmp(field.table_name(), schema.fields().at(i).table_name()) &&
+                  0 == strcmp(field.field_name(), schema.fields().at(i).field_name())) {
+                field_index = i - output_num;
+                break;
+              }
+            }
+
+            const auto& m = output.get(i).get(field_index);
+            const auto& n = output_tuple.get(field_index);
+
+            if (m.compare_with_op(n, NOT_EQUAL)) {
+              equal = false;
+              break;
+            }
+          }
+
+          if (equal) {
+            group_index = i;
+            break;
+          }
+        }
+      } else {
+        group_index = 0;
+      }
+    }
+
+    std::cout <<" after group : ";
+    tuple_sets.at(0).get(0).get(0).to_string(std::cout);
+    std::cout << "\n";
+
+    output.merge(std::move(output_tuple), group_index);
+
+    std::cout <<" after merge : ";
+    tuple_sets.at(0).get(0).get(0).to_string(std::cout);
+    std::cout << "\n";
+
     return RC::SUCCESS;
   }
   for (int i = 0; i < current_set.size(); i++) {
@@ -757,10 +819,10 @@ static RC schema_add_field(Table *table, const char *field_name, AggregationType
 
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
 RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEvent *session_event,
-                                           Selects &selects, Table *table, SelectExeNode &select_node) {
+                                           Selects &selects, Table *table, SelectExeNode &select_node, TupleSchema& output_schema) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
-  TupleSchema *group_by_schema = new TupleSchema;
+  auto group_by_schema = std::make_shared<TupleSchema>();
 
   const char *table_name = table->name();
 
@@ -771,12 +833,17 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       has_aggregation = true;
   }
   schema.setAggregation(has_aggregation || selects.group_by_num > 0);
+  output_schema.setAggregation(has_aggregation || selects.group_by_num > 0 || output_schema.isAggregation());
+
+  //多表的时候先取出来
+  schema.setSchemaFromCount(selects.relation_num > 1);
 
   for (int i = selects.group_by_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.group_bys[i];
     schema_add_field(table, attr.attribute_name, attr.aggregation_type, *group_by_schema);
   }
   schema.set_group_by_schema(group_by_schema);
+  output_schema.get_group_by_schema()->append(*group_by_schema);
 
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];

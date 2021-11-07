@@ -45,7 +45,7 @@ protected:
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
   RC do_subSelect(const char *db, Selects &selects, SessionEvent *session_event, TupleSet &tupleSet);
   RC create_selection_executor(Trx *trx, const char *db, SessionEvent *session_event, Selects &selects, Table *table,
-  SelectExeNode &select_node);
+  SelectExeNode &select_node,  TupleSchema& output_schema);
 protected:
 private:
   Stage *default_storage_stage_ = nullptr;

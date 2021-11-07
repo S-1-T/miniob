@@ -109,9 +109,15 @@ class TupleSchema {
 
   bool isAggregation() const { return isAggregation_; }
 
-  void set_group_by_schema(TupleSchema *schema) { group_by_schema_ = std::shared_ptr<TupleSchema>(schema); }
+  void set_group_by_schema(std::shared_ptr<TupleSchema> &schema) { group_by_schema_ = schema; }
 
-  TupleSchema *get_group_by_schema() const { return group_by_schema_.get(); }
+  const std::shared_ptr<TupleSchema> &get_group_by_schema() const { return group_by_schema_; }
+
+  std::shared_ptr<TupleSchema> &get_group_by_schema() { return group_by_schema_; }
+
+  void setSchemaFromCount(bool MultiTable) { MultiTable_ = MultiTable; }
+
+  bool schemaFromMulti() const { return MultiTable_; }
 
 public:
   static void from_table(const Table *table, TupleSchema &schema);
@@ -120,6 +126,7 @@ public:
   std::vector<TupleField> fields_;
   bool isAggregation_{false};
   std::shared_ptr<TupleSchema> group_by_schema_;
+  bool MultiTable_{false};
 };
 
 class TupleSet {
