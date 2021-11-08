@@ -50,6 +50,8 @@ public:
   int size() const { return values_.size(); }
 
   const TupleValue &get(int index) const { return *values_[index]; }
+  
+  TupleValue &get_mut(int index) { return *values_[index]; }
 
   const std::shared_ptr<TupleValue> &get_pointer(int index) const {
     return values_[index];
@@ -100,33 +102,16 @@ class TupleSchema {
 
   const TupleField &field(int index) const { return fields_[index]; }
 
-  int index_of_field(const char *table_name, const char *field_name) const;
+  int index_of_field(const char *table_name, const char *field_name, AggregationType agg_type) const;
   void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table) const;
-
-  void setAggregation(bool isAggregation) { isAggregation_ = isAggregation; }
-
-  bool isAggregation() const { return isAggregation_; }
-
-  void set_group_by_schema(std::shared_ptr<TupleSchema> &schema) { group_by_schema_ = schema; }
-
-  const std::shared_ptr<TupleSchema> &get_group_by_schema() const { return group_by_schema_; }
-
-  std::shared_ptr<TupleSchema> &get_group_by_schema() { return group_by_schema_; }
-
-  void setSchemaFromCount(bool MultiTable) { MultiTable_ = MultiTable; }
-
-  bool schemaFromMulti() const { return MultiTable_; }
 
 public:
   static void from_table(const Table *table, TupleSchema &schema);
 
  private:
   std::vector<TupleField> fields_;
-  bool isAggregation_{false};
-  std::shared_ptr<TupleSchema> group_by_schema_;
-  bool MultiTable_{false};
 };
 
 class TupleSet {
@@ -142,6 +127,8 @@ class TupleSet {
 
   const TupleSchema &get_schema() const;
 
+  void merge(Tuple &&tuple);
+
   void merge(Tuple &&tuple, int group_index);
 
   void clear();
@@ -153,6 +140,7 @@ class TupleSet {
 
   void sort(const OrderBy orders[], size_t order_num);
   void print(std::ostream &os, bool multi_table) const;
+  void debug_print(std::ostream &os) const;
 public:
   const TupleSchema &schema() const {
     return schema_;

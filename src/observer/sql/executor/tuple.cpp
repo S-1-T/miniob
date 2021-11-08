@@ -127,12 +127,12 @@ void TupleSchema::append(const TupleSchema &other) {
 }
 
 int TupleSchema::index_of_field(const char *table_name,
-                                const char *field_name) const {
+                                const char *field_name, AggregationType agg_type) const {
   const int size = fields_.size();
   for (int i = 0; i < size; i++) {
     const TupleField &field = fields_[i];
     if (0 == strcmp(field.table_name(), table_name) &&
-        0 == strcmp(field.field_name(), field_name)) {
+        0 == strcmp(field.field_name(), field_name) && field.aggregation_type() == agg_type) {
       return i;
     }
   }
@@ -188,6 +188,27 @@ TupleSet &TupleSet::operator=(TupleSet &&other) {
   return *this;
 }
 
+void TupleSet::merge(Tuple &&tuple) {
+  if (tuples_.empty()) {
+    tuples_.emplace_back(std::move(tuple));
+    return;
+  }
+  // 聚合运算的每一个阶段，tuples_ 都只含有一个 Tuple
+  const std::vector<std::shared_ptr<TupleValue>> old_values =
+      tuples_[0].values();
+  int value_idx = 0;
+  for (std::shared_ptr<TupleValue> old_value : old_values) {
+    // 正常扫表而非聚合运算，直接将 tuple 存入
+    if (old_value->aggregation_type() == None) {
+      tuples_.emplace_back(std::move(tuple));
+      return;
+    }
+    // 聚合函数的 Merge 计算
+    old_value->merge(tuple.get(value_idx++));
+  }
+  return;
+}
+
 void TupleSet::merge(Tuple &&tuple, int group_index) {
     if (tuples_.empty() || group_index == -1) {
       tuples_.emplace_back(std::move(tuple));
@@ -218,7 +239,7 @@ void TupleSet::sort(const OrderBy orders[], size_t order_num) {
         for (int i = order_num - 1; i >= 0; i--) {
           const OrderBy &order = orders[i];
           const RelAttr &attr = order.attr;
-          int idx = schema_.index_of_field(attr.relation_name, attr.attribute_name);
+          int idx = schema_.index_of_field(attr.relation_name, attr.attribute_name, attr.aggregation_type);
           const TupleValue &t1_v = t1.get(idx);
           const TupleValue &t2_v = t2.get(idx);
           int cmp_result = t1_v.compare(t2_v);
@@ -257,6 +278,21 @@ void TupleSet::print(std::ostream &os, bool multi_table) const {
   }
 }
 
+void TupleSet::debug_print(std::ostream &os) const {
+  // 此函数用于打印 tuple set 中所有值（忽略 schema）
+  for (const Tuple &item: tuples_) {
+    const std::vector<std::shared_ptr<TupleValue>> &values = item.values();
+    int size = values.size();
+    for (int i = 0; i < size - 1; i++) {
+      const auto &value = values[i];
+      value->to_string(os);
+      os << " | ";
+    }
+    values[size - 1]->to_string(os);
+    os << std::endl;
+  }
+}
+
 void TupleSet::set_schema(const TupleSchema &schema) { schema_ = schema; }
 
 const TupleSchema &TupleSet::get_schema() const { return schema_; }
@@ -280,44 +316,7 @@ void TupleRecordConverter::add_record(const char *record) {
   for (const TupleField &field: schema.fields()) {
     build_tuple(record, field, table_meta, tuple);
   }
-
-  int group_index = -1;
-
-  if (tuple_set_.get_schema().isAggregation()) {
-    if (tuple_set_.get_schema().get_group_by_schema() != nullptr) {
-      // 查找tupleSet里对应的group_index；没找到值为-1，直接插入对应tuple
-      for (int i = 0; i < tuple_set_.size(); i++) {
-        bool equal = true;
-
-        for (const auto &field: tuple_set_.get_schema().get_group_by_schema()->fields()) {
-          const auto &m = tuple_set_.get(i).get(tuple_set_.get_schema().index_of_field(field.table_name(), field.field_name()));
-
-          Tuple t; build_tuple(record, field, table_meta, t);
-          const auto &n = t.get(0);
-
-          if (m.compare_with_op(n, EQUAL_TO)) {
-            equal = false;
-            break;
-          }
-        }
-
-        if (equal) {
-          group_index = i;
-          break;
-        }
-      }
-    } else {
-      // 聚合但是没有group by字段
-      group_index = 0;
-    }
-  }
-
-  // 多表，投影时再处理group by
-  if (tuple_set_.get_schema().schemaFromMulti()) {
-    group_index = -1;
-  }
-
-  tuple_set_.merge(std::move(tuple), group_index);
+  tuple_set_.merge(std::move(tuple));
 }
 
 void TupleRecordConverter::build_tuple(const char *record, const TupleField &field, const TableMeta &table_meta,
