@@ -241,19 +241,7 @@ RC check_ambiguous(size_t relation_num, Table **tables, const char *attribute_na
   return RC::SUCCESS;
 }
 
-// 统一进行 meta 检测, 返回找到的 tables
-// 并为多表构造输出的 schema
-RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema) {
-  // 首先检测 table
-  for (size_t i = 0; i < selects.relation_num; i++) {
-    const char *table_name = selects.relations[i];
-    Table * table = DefaultHandler::get_default().find_table(db, table_name);
-    if (nullptr == table) {
-      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-    tables[i] = table;
-  }
+RC selects_attr_meta_check(const Selects &selects, Table *tables[], TupleSchema &output_schema) {
   // 检测 attr 中的 table 是否存在于要查找的 tables 中
   // 以及 attr 是否存在于此 table 的 fields 中
   // 并为多表查询构造 output_schema
@@ -301,7 +289,76 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       auto field = tables[0]->table_meta().field(0);
       output_schema.add(field->type(), tables[0]->name(), attr.attribute_name, attr.aggregation_type);
     }
+    /* 如果有 group by，非聚合字段必须存在 group by 中 */
+    if (attr.aggregation_type == AggregationType::None) {
+      bool exist = false;
+      for (size_t j = 0; j < selects.group_by_num; j++) {
+        const RelAttr &group_by_attr = selects.group_bys[j];
+        if (0 == strcmp(attr.attribute_name, group_by_attr.attribute_name)) {
+          exist = true;
+          break;
+        }
+      }
+      if (selects.group_by_num > 0 && !exist) {
+        LOG_WARN("select attr %s is not in group bys", attr.attribute_name);
+        return RC::MISMATCH;
+      }
+    }
   }
+  return RC::SUCCESS;
+}
+
+// 统一进行 meta 检测, 返回找到的 tables
+// 并为多表构造输出的 schema
+RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Table **tables, TupleSchema &output_schema) {
+  // 首先检测 table
+  for (size_t i = 0; i < selects.relation_num; i++) {
+    const char *table_name = selects.relations[i];
+    Table * table = DefaultHandler::get_default().find_table(db, table_name);
+    if (nullptr == table) {
+      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    tables[i] = table;
+  }
+
+  // 检测 group by 中的字段是否合法
+  for (size_t i = 0; i < selects.group_by_num; i++) {
+    const RelAttr &group_by_attr = selects.group_bys[i];
+    if (group_by_attr.relation_name != nullptr) {
+      Table *t = nullptr;
+      for (size_t j = 0; j < selects.relation_num; j++) {
+        if (0 == strcmp(group_by_attr.relation_name, selects.relations[j])) {
+          t = tables[j];
+          break;
+        }
+      }
+      if (t == nullptr) {
+        LOG_WARN("Table [%s] is not in group bys' relations", group_by_attr.relation_name);
+        return RC::MISMATCH;
+      }
+      if (nullptr == t->table_meta().field(group_by_attr.attribute_name)) {
+        LOG_WARN("No such field [%s] in table [%s]", group_by_attr.attribute_name, group_by_attr.relation_name);
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    } else if (group_by_attr.is_num == 0 && 0 != strcmp("*", group_by_attr.attribute_name)) {
+      // 检测二义性
+      size_t idx = 0;
+      RC rc = check_ambiguous(selects.relation_num, tables, group_by_attr.attribute_name, idx);
+      if (RC::SUCCESS != rc) {
+        return rc;
+      }
+    } else {
+      LOG_WARN("Group by field [%s] invalid", group_by_attr.attribute_name);
+      return RC::MISMATCH;
+    }
+  }
+
+  RC rc = selects_attr_meta_check(selects, tables, output_schema);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+
   // 检测 condition 中的 attr 是否存在于要查找的 tables 中
   // 以及此 attr 是否存在于此 table 的 fields 中
   for (size_t i = 0; i < selects.condition_num; i++) {
@@ -351,7 +408,7 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       return RC::MISMATCH;
     }
     if (left_is_attr && left_table_name != nullptr &&
-      nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
+        nullptr == tables[left_table_idx]->table_meta().field(left_attr_name)) {
       LOG_WARN("left attr [%s] is not exist in [%s]", left_attr_name, left_table_name);
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
@@ -391,7 +448,57 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       }
     }
   }
+
   return RC::SUCCESS;
+}
+
+void do_group_by(const TupleSet &before, TupleSet &after, const TupleSchema group_by_schema) {
+  const TupleSchema &schema = before.schema();
+  // 此 output_schema 中最后为 group by 的字段
+  const auto &output_schema = after.schema();
+  const auto &output_fields = output_schema.fields();
+  int output_size = output_fields.size();
+  for (auto &before_tuple : before.tuples()) {
+    Tuple after_tuple;
+    for (int i = 0; i < output_size; i++) {
+      const auto &field = output_fields[i];
+      AggregationType agg_type = field.aggregation_type();
+      int val_idx = schema.index_of_field(field.table_name(), field.field_name(), None);
+      TupleValue *t = before_tuple.get(val_idx).clone();
+      t->set_aggregation_type(field.aggregation_type());
+      after_tuple.add(t);
+    }
+    int group_index = -1;
+    for (int i = 0; i < after.size(); i++) {
+      bool equal = true;
+      const auto &group_by_fields = group_by_schema.fields();
+      for (const auto& field : group_by_fields) {
+        int field_index = -1;
+
+        for (int j = output_size - 1; j >= 0; j--) {
+          if (0 == strcmp(field.table_name(), output_schema.fields().at(j).table_name()) &&
+              0 == strcmp(field.field_name(), output_schema.fields().at(j).field_name())) {
+            field_index = j;
+            break;
+          }
+        }
+
+        const auto& m = after.get(i).get(field_index);
+        const auto& n = after_tuple.get(field_index);
+
+        if (m.compare_with_op(n, NOT_EQUAL)) {
+          equal = false;
+          break;
+        }
+      }
+
+      if (equal) {
+        group_index = i;
+        break;
+      }
+    }
+    after.merge(std::move(after_tuple), group_index);
+  }
 }
 
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
@@ -409,7 +516,12 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     LOG_ERROR("Selection meta test failed");
     return rc;
   }
-
+  if (selects.group_by_num > 0) {
+    output_schema.clear();
+    for (size_t i = 0; i < selects.relation_num; i++) {
+      TupleSchema::from_table(tables[i], output_schema);
+    }
+  } 
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
@@ -446,6 +558,16 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     }
   }
 
+  TupleSchema group_by_schema;
+  for (int i = selects.group_by_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.group_bys[i];
+    if (selects.relation_num > 1) {
+      group_by_schema.add(UNDEFINED, attr.relation_name, attr.attribute_name, None);
+    } else {
+      group_by_schema.add(UNDEFINED, selects.relations[0], attr.attribute_name, None);
+    }
+  }
+
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做join操作
@@ -470,16 +592,38 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
       output.sort(selects.order_bys, selects.order_by_num);
     }
     output.set_schema(output_schema);
-    output.print(ss, true);
+    if (selects.group_by_num > 0) {
+      output_schema.clear();
+      selects_attr_meta_check(selects, tables, output_schema);
+      TupleSchema temp(output_schema);
+      temp.append(group_by_schema);
+      TupleSet ouput_after_group(temp);
+      do_group_by(output, ouput_after_group, group_by_schema);
+      ouput_after_group.set_schema(output_schema);
+      ouput_after_group.print(ss, true);
+    } else {
+      output.print(ss, true);
+    }
   } else {
     TupleSet &output = tuple_sets.front();
     if (selects.order_by_num > 0) {
       // 需要排序
       output.sort(selects.order_bys, selects.order_by_num);
     }
-    // 当前只查询一张表，直接返回结果即可
-//    output.set_schema(output_schema);
-    output.print(ss, false);
+    output.set_schema(output_schema);
+    if (selects.group_by_num > 0) {
+      output_schema.clear();
+      selects_attr_meta_check(selects, tables, output_schema);
+      TupleSchema temp(output_schema);
+      temp.append(group_by_schema);
+      TupleSet ouput_after_group(temp);
+      do_group_by(output, ouput_after_group, group_by_schema);
+      ouput_after_group.set_schema(output_schema);
+      ouput_after_group.print(ss, false);
+    } else {
+      // 当前只查询一张表，直接返回结果即可
+      output.print(ss, false);
+    }
   }
 
   for (SelectExeNode *&tmp_node: select_nodes) {
@@ -604,7 +748,9 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
   // 冗余处理
   new_schema.append(output_schema);
   output = TupleSet(new_schema);
+
   auto *values = new std::shared_ptr<TupleValue>[new_schema.fields().size()];
+
   rc = cartesian(tuple_sets, condition_num, conditions, values, 0, output, table_num - 1);
   delete[] values;
   return rc;
@@ -612,8 +758,8 @@ RC do_cartesian(std::vector<TupleSet> &tuple_sets, const int condition_num, Cond
 
 // 超出 6 个参数，
 // 直接通过参数存取 value_num 的性能与每次计算 value_num 的性能谁更高未知
-RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions, std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index) {
-
+RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *conditions,
+             std::shared_ptr<TupleValue> *values, int value_num, TupleSet &output, int index) {
   /*
    * schema 的结构为： tuple_sets 中 schema 的倒续连接 + 直接要输出的 schema
    * 例如：
@@ -627,13 +773,21 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
    * 由此完成 Projection 操作。
    */
   auto &schema = output.schema();
-  auto &current_set = tuple_sets[index];
+  const TupleSet &current_set = tuple_sets[index];
   if (value_num > 0) {
     // 对笛卡尔积生成的结果做条件过滤, 判断 condition，便于提前剪枝
     for (int i = 0; i < condition_num; i++) {
       Condition &condition = conditions[i];
-      int left_idx = schema.index_of_field(condition.left_attr.relation_name, condition.left_attr.attribute_name);
-      int right_idx = schema.index_of_field(condition.right_attr.relation_name, condition.right_attr.attribute_name);
+      int left_idx = schema.index_of_field(
+        condition.left_attr.relation_name, 
+        condition.left_attr.attribute_name,
+        condition.left_attr.aggregation_type
+      );
+      int right_idx = schema.index_of_field(
+        condition.right_attr.relation_name, 
+        condition.right_attr.attribute_name,
+        condition.right_attr.aggregation_type
+      );
       if (left_idx >= value_num || right_idx >= value_num) {
         continue;
       }
@@ -654,14 +808,16 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
     std::shared_ptr<TupleValue> output_value[output_num];
     for (int i = 0; i < output_num; i++) {
       auto field = schema.field(value_num + i);
-      int val_idx = schema.index_of_field(field.table_name(), field.field_name());
+      int val_idx = schema.index_of_field(field.table_name(), field.field_name(), field.aggregation_type());
       output_value[i] = values[val_idx];
     }
     for (int i = 0; i < output_num; i++) {
       // 只加入要 select 的字段
       output_tuple.add(output_value[i]);
     }
+  
     output.merge(std::move(output_tuple));
+
     return RC::SUCCESS;
   }
   for (int i = 0; i < current_set.size(); i++) {
@@ -706,8 +862,9 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
                                            Selects &selects, Table *table, SelectExeNode &select_node) {
   // 列出跟这张表关联的Attr
   TupleSchema schema;
+
   const char *table_name = table->name();
-  // TODO: GROUP BY 支持
+
   bool has_aggregation = false;
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
@@ -716,8 +873,6 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
   }
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
-    if (attr.aggregation_type == None && has_aggregation)
-      return RC::SCHEMA_FIELD_NAME_ILLEGAL;
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
       if (0 == strcmp("*", attr.attribute_name)) {
         if (attr.aggregation_type != None) {
@@ -747,6 +902,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       }
     }
   }
+  
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
@@ -756,7 +912,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
         (condition.left_is_attr == 1 && condition.right_is_attr == 0 && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
         (condition.left_is_attr == 0 && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名
         (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
-            match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
+         match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
         ) {
       DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
       RC rc = condition_filter->init(*table, condition);
@@ -769,7 +925,7 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       }
       condition_filters.push_back(condition_filter);
     } else if (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
-      condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
+               condition.left_attr.relation_name != nullptr && condition.left_attr.relation_name != condition.right_attr.relation_name) {
       // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
@@ -828,5 +984,10 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
     }
     schema_add_field(table, attr.attribute_name, AggregationType::None, schema);
   }
+  if (selects.group_by_num > 0) {
+    schema.clear();
+    // 如果有 group by 就全选出来
+    TupleSchema::from_table(table, schema);
+  } 
   return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }

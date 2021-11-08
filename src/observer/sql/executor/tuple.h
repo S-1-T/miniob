@@ -17,13 +17,14 @@ See the Mulan PSL v2 for more details. */
 
 #include <memory>
 #include <vector>
+#include <storage/common/table_meta.h>
 
 #include "sql/executor/value.h"
 
 class Table;
 
 class Tuple {
- public:
+public:
   Tuple() = default;
 
   Tuple(const Tuple &other);
@@ -49,6 +50,8 @@ class Tuple {
   int size() const { return values_.size(); }
 
   const TupleValue &get(int index) const { return *values_[index]; }
+  
+  TupleValue &get_mut(int index) { return *values_[index]; }
 
   const std::shared_ptr<TupleValue> &get_pointer(int index) const {
     return values_[index];
@@ -99,10 +102,11 @@ class TupleSchema {
 
   const TupleField &field(int index) const { return fields_[index]; }
 
-  int index_of_field(const char *table_name, const char *field_name) const;
+  int index_of_field(const char *table_name, const char *field_name, AggregationType agg_type) const;
   void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table) const;
+
 public:
   static void from_table(const Table *table, TupleSchema &schema);
 
@@ -125,6 +129,8 @@ class TupleSet {
 
   void merge(Tuple &&tuple);
 
+  void merge(Tuple &&tuple, int group_index);
+
   void clear();
 
   bool is_empty() const;
@@ -134,6 +140,7 @@ class TupleSet {
 
   void sort(const OrderBy orders[], size_t order_num);
   void print(std::ostream &os, bool multi_table) const;
+  void debug_print(std::ostream &os) const;
 public:
   const TupleSchema &schema() const {
     return schema_;
@@ -152,6 +159,7 @@ class TupleRecordConverter {
  private:
   Table *table_;
   TupleSet &tuple_set_;
+  void build_tuple(const char *record, const TupleField &field, const TableMeta &table_meta, Tuple &tuple);
 };
 
 #endif  //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

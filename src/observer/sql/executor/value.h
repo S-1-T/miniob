@@ -30,6 +30,7 @@ class TupleValue {
   TupleValue() = default;
   virtual ~TupleValue() = default;
 
+  virtual TupleValue *clone() const = 0;
   virtual void to_string(std::ostream &os) const = 0;
   virtual void merge(const TupleValue &other) = 0;
   virtual int compare(const TupleValue &other) const = 0;
@@ -72,6 +73,7 @@ class TupleValue {
   int get_count() const { return count; }
   virtual double get_avg() const { }
   virtual double get_value() const { };
+  void set_aggregation_type(AggregationType agg) { aggregation_type_ = agg; }
  protected:
   int count = 1;
   AggregationType aggregation_type_ = None;
@@ -86,6 +88,8 @@ class IntValue : public TupleValue {
       : value_(value), avg_(value), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
+
+  IntValue *clone() const { return new IntValue(*this); }
 
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
@@ -197,6 +201,8 @@ class FloatValue : public TupleValue {
       : value_(value), avg_(value), is_null_(is_null) {
     aggregation_type_ = aggregation_type;
   }
+
+  FloatValue *clone() const { return new FloatValue(*this); }
 
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
@@ -315,6 +321,8 @@ class DateValue : public TupleValue {
     aggregation_type_ = aggregation_type;
   }
 
+  DateValue *clone() const { return new DateValue(*this); }
+
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -396,6 +404,8 @@ class StringValue : public TupleValue {
     aggregation_type_ = aggregation_type;
   }
 
+  StringValue *clone() const { return new StringValue(*this); }
+
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {
       case CountAggregate: {
@@ -464,6 +474,8 @@ public:
     value_(value) {
       aggregation_type_ = aggregation_type;
     }
+
+  TextValue *clone() const { return new TextValue(*this); }
 
   void to_string(std::ostream &os) const override {
     switch (aggregation_type_) {

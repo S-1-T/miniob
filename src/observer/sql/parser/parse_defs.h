@@ -112,6 +112,8 @@ typedef struct {
   Condition conditions[MAX_NUM];    // conditions in Where clause
   size_t    order_by_num;
   OrderBy   order_bys[MAX_NUM];
+  size_t    group_by_num;
+  RelAttr   group_bys[MAX_NUM];
 } Selects;
 
 typedef struct _InsertTuple {
@@ -264,6 +266,7 @@ void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
 void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_append_order_by(Selects *selects, OrderBy *order_by);
+void selects_append_group_by(Selects *selects, RelAttr *rel_attr);
 void selects_destroy(Selects *selects);
 
 void insert_tuple_init(InsertTuple *tuple, Value values[], size_t value_num);
