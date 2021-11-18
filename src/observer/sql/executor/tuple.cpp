@@ -316,7 +316,6 @@ void TupleRecordConverter::add_record(const char *record) {
   for (const TupleField &field: schema.fields()) {
     build_tuple(record, field, table_meta, tuple);
   }
-
   tuple_set_.merge(std::move(tuple));
 }
 
