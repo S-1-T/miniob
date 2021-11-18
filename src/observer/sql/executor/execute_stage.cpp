@@ -929,50 +929,6 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       // 加入多表需要的列
       schema_add_field(table, condition.left_attr.attribute_name, condition.left_attr.aggregation_type, schema);
       schema_add_field(table, condition.right_attr.attribute_name, condition.right_attr.aggregation_type, schema);
-    } else if (condition.left_is_attr == 2 || condition.right_is_attr == 2) {
-      TupleSet* tupleSet = new TupleSet;
-      Selects sub_select;
-      Value* value = nullptr;
-
-      if (condition.left_is_attr == 2) {
-        sub_select = *reinterpret_cast<Selects*>(condition.left_value.data);
-        value = &const_cast<Condition&>(condition).left_value;
-      } else {
-        sub_select = *reinterpret_cast<Selects*>(condition.right_value.data);
-        value = &const_cast<Condition&>(condition).right_value;
-      }
-
-      RC rc = do_subSelect(db, sub_select, session_event, *tupleSet);
-      if (rc != RC::SUCCESS) {
-        delete tupleSet;
-        for (DefaultConditionFilter * &filter : condition_filters) {
-          delete filter;
-        }
-        value_destroy(value);
-        return rc;
-      }
-      if (tupleSet->schema().fields().size() != 1) {
-        LOG_WARN("tuple set column size is not 1, cannot be compare");
-        value_destroy(value);
-        return RC::MISMATCH;
-      }
-      value_destroy(value);
-
-      value->type = TUPLESET;
-      value->data = malloc(sizeof(TupleSet*));
-      value->data = tupleSet;
-
-      DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
-      rc = condition_filter->init(*table, condition);
-      if (rc != RC::SUCCESS) {
-        delete condition_filter;
-        for (DefaultConditionFilter * &filter : condition_filters) {
-          delete filter;
-        }
-        return rc;
-      }
-
-      condition_filters.push_back(condition_filter);
     }
   }
   // 加入 ORDER BY 需要的字段
