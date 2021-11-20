@@ -521,7 +521,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     for (size_t i = 0; i < selects.relation_num; i++) {
       TupleSchema::from_table(tables[i], output_schema);
     }
-  } 
+  }
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (size_t i = 0; i < selects.relation_num; i++) {
@@ -645,7 +645,6 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
 }
 
 RC ExecuteStage::do_subSelect(const char *db, Selects &selects, SessionEvent *session_event, TupleSet &tupleSet) {
-
   RC rc = RC::SUCCESS;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
@@ -779,12 +778,12 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
     for (int i = 0; i < condition_num; i++) {
       Condition &condition = conditions[i];
       int left_idx = schema.index_of_field(
-        condition.left_attr.relation_name, 
+        condition.left_attr.relation_name,
         condition.left_attr.attribute_name,
         condition.left_attr.aggregation_type
       );
       int right_idx = schema.index_of_field(
-        condition.right_attr.relation_name, 
+        condition.right_attr.relation_name,
         condition.right_attr.attribute_name,
         condition.right_attr.aggregation_type
       );
@@ -815,7 +814,7 @@ RC cartesian(std::vector<TupleSet> &tuple_sets, int condition_num, Condition *co
       // 只加入要 select 的字段
       output_tuple.add(output_value[i]);
     }
-  
+
     output.merge(std::move(output_tuple));
 
     return RC::SUCCESS;
@@ -855,6 +854,21 @@ static RC schema_add_field(Table *table, const char *field_name, AggregationType
   else
     schema.add(field_meta->type(), table->name(), field_meta->name(), aggregation_type);
   return RC::SUCCESS;
+}
+
+bool asValue(int is_attr, RelAttr attr, Selects &selects) {
+  if (is_attr == 0) return true;
+
+  if (is_attr == 1) {
+    for (int i = 0; i< selects.relation_num; i++) {
+      if (strcmp(attr.relation_name, selects.relations[i]) == 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
 }
 
 // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
@@ -902,20 +916,19 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       }
     }
   }
-  
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &condition = selects.conditions[i];
-    if ((condition.left_is_attr == 0 && condition.right_is_attr == 0) || // 两边都是值
-        (condition.left_is_attr == 1 && condition.right_is_attr == 0 && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
-        (condition.left_is_attr == 0 && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名
+    if ((asValue(condition.left_is_attr, condition.left_attr, selects) && asValue(condition.right_is_attr, condition.right_attr, selects) ) || // 两边都是值
+        (condition.left_is_attr == 1 && asValue(condition.right_is_attr, condition.right_attr, selects) && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
+        (asValue(condition.left_is_attr, condition.left_attr, selects) && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名
         (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
          match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
-        ) {
+        || condition.left_is_attr == 2 || condition.right_is_attr == 2) {
       DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
-      RC rc = condition_filter->init(*table, condition);
+      RC rc = condition_filter->init(*table, condition, db);
       if (rc != RC::SUCCESS) {
         delete condition_filter;
         for (DefaultConditionFilter * &filter : condition_filters) {
@@ -944,6 +957,6 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
     schema.clear();
     // 如果有 group by 就全选出来
     TupleSchema::from_table(table, schema);
-  } 
+  }
   return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }

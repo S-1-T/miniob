@@ -14,6 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <cmath>
 #include <sql/executor/tuple.h>
+#include <sql/executor/execute_stage.h>
+#include <storage/default/default_handler.h>
 
 #include "condition_filter.h"
 
@@ -62,24 +64,24 @@ RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right,
   return RC::SUCCESS;
 }
 
-RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
+RC DefaultConditionFilter::init(Table &table, const Condition &condition, const char* db) {
   const TableMeta &table_meta = table.table_meta();
   ConDesc left;
   ConDesc right;
 
   AttrType type_left = UNDEFINED;
   AttrType type_right = UNDEFINED;
-  bool sub_query_legal = true;
 
   if (1 == condition.left_is_attr) {
     left.is_attr = true;
     const FieldMeta *field_left =
         table_meta.field(condition.left_attr.attribute_name);
-    if (nullptr == field_left) {
-      LOG_WARN("No such field in condition. %s.%s", table.name(),
-               condition.left_attr.attribute_name);
-      return RC::SCHEMA_FIELD_MISSING;
+
+    if (field_left == nullptr) {
+      Table * table = DefaultHandler::get_default().find_table(db, condition.left_attr.relation_name);
+      field_left = table->table_meta().field(condition.left_attr.attribute_name);
     }
+
     left.attr_length = field_left->len();
     left.attr_offset = field_left->offset();
 
@@ -87,35 +89,37 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     type_left = field_left->type();
     left.attr_type = type_left;
+    left.rel_name = condition.left_attr.relation_name;
+    left.attr_name = condition.left_attr.attribute_name;
   } else {
     left.is_attr = false;
     left.value = condition.left_value.data;  // 校验type 或者转换类型
 
     if (0 == condition.left_is_attr) {
       type_left = condition.left_value.type;
-      left.attr_type = type_left;
     } else {
-      TupleSet *tupleSet = static_cast<TupleSet *>(condition.left_value.data);
-      type_left = tupleSet->get_schema().field(0).type();
-      left.attr_type = TUPLESET;
-
-      if (tupleSet->get_schema().field(0).aggregation_type() == None) {
-        sub_query_legal = false;
-      }
+      Selects* left_select = (Selects*)condition.left_value.data;
+      RelAttr left_attr = left_select->attributes[0];
+      Table * subquery_table = DefaultHandler::get_default().find_table(db, left_attr.relation_name);
+      type_left = subquery_table->table_meta().field(left_attr.attribute_name)->type();
     }
+
+    right.attr_type = condition.left_value.type;
 
     left.attr_length = 0;
     left.attr_offset = 0;
     left.is_null = condition.left_value.is_null;
   }
+
   if (1 == condition.right_is_attr) {
     right.is_attr = true;
     const FieldMeta *field_right =
         table_meta.field(condition.right_attr.attribute_name);
-    if (nullptr == field_right) {
-      LOG_WARN("No such field in condition. %s.%s", table.name(),
-               condition.right_attr.attribute_name);
-      return RC::SCHEMA_FIELD_MISSING;
+    if (field_right == nullptr) {
+      Table * table = DefaultHandler::get_default().find_table(db, condition.right_attr.relation_name);
+      field_right = table->table_meta().field(condition.right_attr.attribute_name);
+      right.rel_name = condition.right_attr.relation_name;
+      right.attr_name = condition.right_attr.attribute_name;
     }
     right.attr_length = field_right->len();
     right.attr_offset = field_right->offset();
@@ -123,29 +127,30 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition) {
 
     right.value = nullptr;
     right.attr_type = type_right;
+    right.rel_name = condition.right_attr.relation_name;
+    right.attr_name = condition.right_attr.attribute_name;
   } else {
     right.is_attr = false;
     right.value = condition.right_value.data;
 
     if (0 == condition.right_is_attr) {
       type_right = condition.right_value.type;
-      right.attr_type = type_right;
     } else {
-      TupleSet *tupleSet = static_cast<TupleSet *>(condition.right_value.data);
-      type_right = tupleSet->get_schema().field(0).type();
-      right.attr_type = TUPLESET;
-
-      if (condition.comp != IN_OP && condition.comp != NOT_IN_OP && tupleSet->get_schema().field(0).aggregation_type() == None) {
-        sub_query_legal = false;
-      }
+      Selects* right_select = (Selects*)condition.right_value.data;
+      RelAttr right_attr = right_select->attributes[0];
+      Table * subquery_table = DefaultHandler::get_default().find_table(db, right_attr.relation_name);
+      type_right = subquery_table->table_meta().field(right_attr.attribute_name)->type();
     }
+
+    right.attr_type = condition.right_value.type;
 
     right.attr_length = 0;
     right.attr_offset = 0;
     right.is_null = condition.right_value.is_null;
   }
+
   // 校验和转换
-  if (!is_type_convertable(type_left, type_right) || !sub_query_legal) {
+  if (!is_type_convertable(type_left, type_right)) {
     LOG_WARN(
         "Two values' types incompatible, left: %d, right: %d",
         type_left, type_right);
@@ -223,6 +228,13 @@ bool DefaultConditionFilter::filter(const Record &rec) const {
   if (left_.attr_type != TUPLESET && right_.attr_type != TUPLESET) {
     cmp_result = get_cmp_result(left_value, right_value);
   } else {
+    // 根据record生成Tuple
+
+    // 填充子查询内容 -> 直接再ConSec加字段
+
+    // 执行子查询 -> 返回的TupleSet的存储问题
+
+    // 比较
     if (right_.attr_type == TUPLESET) {
       TupleSet* tupleSet = reinterpret_cast<TupleSet*>(right_value);
       TupleValue* left_data = getTuple(attr_type_, left_value);

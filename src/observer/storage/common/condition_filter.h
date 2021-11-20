@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "rc.h"
 #include "sql/parser/parse.h"
+#include <string>
 
 struct Record;
 class Table;
@@ -29,6 +30,9 @@ struct ConDesc {
   int    attr_offset; // 如果是属性，表示在记录中的偏移量
   void * value;       // 如果是值类型，这里记录值的数据
   bool is_null;       // 如果值类型是 null
+
+  std::string rel_name{};
+  std::string attr_name{};
 };
 
 class ConditionFilter {
@@ -49,7 +53,7 @@ public:
   virtual ~DefaultConditionFilter();
 
   RC init(const ConDesc &left, const ConDesc &right, AttrType attr_type, AttrType type_right, CompOp comp_op);
-  RC init(Table &table, const Condition &condition);
+  RC init(Table &table, const Condition &condition, const char* db = nullptr);
 
   virtual bool filter(const Record &rec) const;
 
@@ -72,8 +76,8 @@ private:
 private:
   ConDesc  left_;
   ConDesc  right_;
-  AttrType attr_type_ = UNDEFINED;   /* left的数据类型 */
-  AttrType type_right_ = UNDEFINED;  /* right的数据类型 */
+  AttrType attr_type_ = UNDEFINED;   /* left的数据类型 基本数据类型 */
+  AttrType type_right_ = UNDEFINED;  /* right的数据类型 基本数据类型 */
   CompOp   comp_op_ = NO_OP;
 };
 
