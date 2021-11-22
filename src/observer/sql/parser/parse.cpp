@@ -102,25 +102,55 @@ void value_destroy(Value *value) {
   value->is_null = false;
 }
 
-void condition_init(Condition *condition, CompOp comp, 
-                    int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value) {
-  condition->comp = comp;
-  condition->left_is_attr = left_is_attr;
-  if (left_is_attr == 1) {
-    condition->left_attr = *left_attr;
-  } else {
-    condition->left_value = *left_value;
+Expression * expression_create(ExpressionType expr_type, RelAttr *attr, Value *value,
+                                BinaryOperator op, Expression *left_expr, Expression *right_expr) {
+  Expression *expr = (Expression *)malloc(sizeof(Expression));
+  if (nullptr == expr) {
+    LOG_ERROR("Failed to alloc memroy for expression. size=%ld", sizeof(Expression));
+    return nullptr;
   }
+  expr->expr_type = expr_type;
+  if (expr->expr_type == VAL || expr->expr_type == SUB_QUERY) {
+    expr->value = *value;
+  } else if (expr->expr_type == ATTR) {
+    expr->attr = *attr;
+  }
+  expr->op = op;
+  expr->left_expr = left_expr;
+  expr->right_expr = right_expr;
+  return expr;
+}
+void expression_destroy(Expression *expression) {
+  if (expression->left_expr != nullptr) {
+    expression_destroy(expression->left_expr);
+  }
+  if (expression->right_expr != nullptr) {
+    expression_destroy(expression->left_expr);
+  }
+  if (expression->expr_type == ATTR) {
+    relation_attr_destroy(&expression->attr);
+  } else if (expression->expr_type == VAL) {
+    value_destroy(&expression->value);
+  }
+  expression->op = NOP;
+}
 
-  condition->right_is_attr = right_is_attr;
-  if (right_is_attr == 1) {
-    condition->right_attr = *right_attr;
-  } else {
-    condition->right_value = *right_value;
-  }
+void condition_init(Condition *condition, CompOp comp, Expression *left_expr, Expression *right_expr) {
+  condition->comp = comp;
+  condition->left_expr = left_expr;
+  condition->right_expr = right_expr;
+  condition->attr_num = 0;
 }
 void condition_destroy(Condition *condition) {
+  if (condition->left_expr != nullptr) {
+    expression_destroy(condition->left_expr);
+    free(condition->left_expr);
+  }
+  if (condition->right_expr != nullptr) {
+    expression_destroy(condition->right_expr);
+    free(condition->right_expr);
+  }
+  condition->attr_num = 0;
   if (condition->left_is_attr) {
     relation_attr_destroy(&condition->left_attr);
   } else {

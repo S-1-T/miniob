@@ -85,12 +85,43 @@ typedef struct _Value {
   char is_null;
 } Value;
 
+typedef enum { VAL, ATTR, SUB_QUERY, EXPR } ExpressionType;
+
+typedef enum {
+  NOP,   // no operation
+  Plus,  // "+"    1
+  Minus, // "-"    2
+  Mul,   // "*"    3
+  Div    // "/"    4
+} BinaryOperator;
+
+// 表达式节点
+// left_expr 与 right_expr 均为空时，表示一个叶子节点，即属性值，属性名或子查询
+// TODO: 也许可以引入一个 UnaryOperationExpression 类型，用来表示一元表达式
+typedef struct _Expression {
+  ExpressionType expr_type;
+  Value value;
+  RelAttr attr;
+
+  BinaryOperator op;
+  struct _Expression *left_expr;
+  struct _Expression *right_expr;
+} Expression;
+
 typedef struct _Condition {
+  CompOp comp;    // comparison operator
+  Expression *left_expr;
+  Expression *right_expr;
+  // 表达式中可能存在多个属性值，统一存到 Condition 节点中，便于元信息检查
+  size_t attr_num;
+  const RelAttr *attrs[MAX_NUM];
+
+  // 为了保证不破坏旧逻辑，先保留字段做转换
+  // TODO: 彻底使用 expression 表达式
   int left_is_attr;    // TRUE if left-hand side is an attribute
                        // 1时，操作符左边是属性名，0时，是属性值; 2是select
   Value left_value;    // left-hand side value if left_is_attr = FALSE
   RelAttr left_attr;   // left-hand side attribute
-  CompOp comp;         // comparison operator
   int right_is_attr;   // TRUE if right-hand side is an attribute
                        // 1时，操作符右边是属性名，0时，是属性值
   RelAttr right_attr;  // right-hand side attribute if right_is_attr = TRUE 右边的属性
@@ -151,7 +182,7 @@ typedef struct {
   char nullable;
 } AttrInfo;
 
-// struct of craete_table
+// struct of create_table
 typedef struct {
   char *relation_name;           // Relation name
   size_t attribute_count;        // Length of attribute
@@ -251,8 +282,10 @@ void value_init_null(Value *value);
 void value_init_select(Value *value, Selects select);
 void value_destroy(Value *value);
 
-void condition_init(Condition *condition, CompOp comp, int left_is_attr, RelAttr *left_attr, Value *left_value,
-    int right_is_attr, RelAttr *right_attr, Value *right_value);
+Expression *expression_create(ExpressionType expr_type, RelAttr *attr, Value *value, BinaryOperator op, Expression *left_expr, Expression *right_expr);
+void expression_destroy(Expression *expression);
+
+void condition_init(Condition *condition, CompOp comp, Expression *left_expr, Expression *right_expr);
 void condition_destroy(Condition *condition);
 
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, char nullable);
@@ -304,8 +337,8 @@ void desc_table_destroy(DescTable *desc_table);
 void load_data_init(LoadData *load_data, const char *relation_name, const char *file_name);
 void load_data_destroy(LoadData *load_data);
 
-void query_init(Query *query);
 Query *query_create();  // create and init
+void query_init(Query *query);
 void query_reset(Query *query);
 void query_destroy(Query *query);  // reset and delete
 

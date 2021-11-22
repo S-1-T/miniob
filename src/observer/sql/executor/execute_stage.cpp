@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 #include "execute_stage.h"
 
@@ -418,6 +419,41 @@ RC ExecuteStage::selects_meta_check(const char *db, const Selects &selects, Tabl
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
   }
+  // 检测表达式 condition 中的 attr 是否存在于要查找的 tables 中
+  // TODO: 和上面的左右值检查合并
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &condition = selects.conditions[i];
+    if (condition.attr_num == 0) {
+      continue;
+    }
+    for (size_t j = 0; j < condition.attr_num; j++) {
+      const RelAttr *attr = condition.attrs[j];
+      if (attr->relation_name != nullptr) {
+        Table *t = nullptr;
+        for (size_t k = 0; k < selects.relation_num; k++) {
+          if (0 == strcmp(attr->relation_name, selects.relations[k])) {
+            t = tables[k];
+            break;
+          }
+        }
+        if (t == nullptr) {
+          LOG_WARN("Table [%s] is not in condition's relations", attr->relation_name);
+          return RC::MISMATCH;
+        }
+        if (nullptr == t->table_meta().field(attr->attribute_name)) {
+          LOG_WARN("No such field [%s] in table [%s]", attr->attribute_name, attr->relation_name);
+          return RC::SCHEMA_FIELD_NOT_EXIST;
+        }
+      } else {
+        // 检测二义性
+        size_t idx = 0;
+        RC rc = check_ambiguous(selects.relation_num, tables, attr->attribute_name, idx);
+        if (RC::SUCCESS != rc) {
+          return rc;
+        }
+      }
+    }
+  }
   for (size_t i = 0; i < selects.order_by_num; i++) {
     const OrderBy &order_by = selects.order_bys[i];
     const RelAttr &attr = order_by.attr;
@@ -501,6 +537,56 @@ void do_group_by(const TupleSet &before, TupleSet &after, const TupleSchema grou
   }
 }
 
+// 深度优先遍历表达式树，收集所有属性信息。
+void traverse_expr_attrs(Condition &condition, const Expression *expr) {
+  if (expr->left_expr != nullptr) {
+    traverse_expr_attrs(condition, expr->left_expr);
+  }
+  if (expr->right_expr != nullptr) {
+    traverse_expr_attrs(condition, expr->right_expr);
+  }
+  if (expr->expr_type == ATTR) {
+    condition.attrs[condition.attr_num++] = &expr->attr;
+  }
+}
+
+// 本函数有两个作用：
+//   1.为了不破坏之前的兼容性，把表达式 Condition 强转为旧逻辑下左右属性/值的结构
+//   2.收集左右表达式两侧涉及到的所有属性信息，以备后续表元信息检查
+// TODO: 彻底使用 expression 表达式
+void convert_condition(Selects &selects) {
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    Condition &condition = selects.conditions[i];
+    // 顶层 Expression 节点的左右子表达式不可为空
+    assert(condition.left_expr != nullptr);
+    assert(condition.right_expr != nullptr);
+    const Expression *left_expr = condition.left_expr;
+    const Expression *right_expr = condition.right_expr;
+    // 顶层 Expression 无左右子节点，说明条件左右非运算表达式，均为属性或值
+    if (left_expr->left_expr == nullptr && left_expr->right_expr == nullptr && left_expr->expr_type !=  EXPR) {
+      assert(right_expr->left_expr == nullptr && right_expr->right_expr == nullptr && right_expr->expr_type !=  EXPR);
+      condition.left_is_attr = left_expr->expr_type;
+      if (left_expr->expr_type == VAL || left_expr->expr_type == SUB_QUERY) {
+        condition.left_value = left_expr->value;
+      } else if (left_expr->expr_type == ATTR) {
+        condition.left_attr = left_expr->attr;
+      }
+      condition.right_is_attr = right_expr->expr_type;
+      if (right_expr->expr_type == VAL || right_expr->expr_type == SUB_QUERY) {
+        condition.right_value = right_expr->value;
+      } else if (right_expr->expr_type == ATTR) {
+        condition.right_attr = right_expr->attr;
+      }
+      continue;
+    }
+    // 顶层 Expression 有任意左右子节点，说明条件左右存在运算表达式，做一些预处理工作
+    assert((left_expr->left_expr != nullptr || left_expr->right_expr != nullptr) && left_expr->expr_type == EXPR);
+    // 收集左右表达式两侧涉及到的所有属性信息，以备后续表元信息检查
+    traverse_expr_attrs(condition, left_expr);
+    traverse_expr_attrs(condition, right_expr);
+  }
+}
+
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
 // 需要补充上这一部分. 校验部分也可以放在resolve，不过跟execution放一起也没有关系
 RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_event) {
@@ -511,6 +597,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   Selects &selects = sql->sstr.selection;
   Table *tables[selects.relation_num];
   TupleSchema output_schema; // 用于输出展示的 schema, 只用于多表查询
+  convert_condition(selects); // 用于兼容表达式条件
   rc = selects_meta_check(db, selects, tables, output_schema);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Selection meta test failed");
@@ -902,7 +989,6 @@ RC ExecuteStage::create_selection_executor(Trx *trx, const char *db, SessionEven
       }
     }
   }
-  
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;

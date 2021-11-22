@@ -137,6 +137,7 @@ ParserContext *get_context(yyscan_t scanner)
 
 %union {
   struct _Attr *attr;
+  struct _Expression *expression1;
   struct _Condition *condition1;
   struct _Value *value1;
   struct _InsertTuple *tuples1;
@@ -156,6 +157,7 @@ ParserContext *get_context(yyscan_t scanner)
 //非终结符
 
 %type <number> type;
+%type <expression1> expression;
 %type <condition1> condition;
 %type <value1> value;
 %type <number> number;
@@ -163,6 +165,9 @@ ParserContext *get_context(yyscan_t scanner)
 %type <number> order_type;
 %type <number> nullable;
 %type <number> comOp
+
+%left '-' '+'
+%left '*' '/'
 
 %%
 
@@ -636,196 +641,80 @@ rel_list:
 where:
     /* empty */ 
     | WHERE condition condition_list {
-     }
+    }
     ;
 condition_list:
     /* empty */
     | AND condition condition_list {
-     }
+    }
     ;
 condition:
-    ID comOp value 
-        {
-            RelAttr left_attr;
-            relation_attr_init(&left_attr, NULL, $1);
-
-            Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-            Condition condition;
-            condition_init(&condition, $2, 1, &left_attr, NULL, 0, NULL, right_value);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-        }
-        |value comOp value 
-        {
-            Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 2];
-            Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-            Condition condition;
-            condition_init(&condition, $2, 0, NULL, left_value, 0, NULL, right_value);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-        }
-        |ID comOp ID 
-        {
-            RelAttr left_attr;
-            relation_attr_init(&left_attr, NULL, $1);
-            RelAttr right_attr;
-            relation_attr_init(&right_attr, NULL, $3);
-
-            Condition condition;
-            condition_init(&condition, $2, 1, &left_attr, NULL, 1, &right_attr, NULL);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-
-        }
-    |value comOp ID
-        {
-            Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-            RelAttr right_attr;
-            relation_attr_init(&right_attr, NULL, $3);
-
-            Condition condition;
-            condition_init(&condition, $2, 0, NULL, left_value, 1, &right_attr, NULL);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-        }
-    |ID DOT ID comOp value
-        {
-            RelAttr left_attr;
-            relation_attr_init(&left_attr, $1, $3);
-            Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-            Condition condition;
-            condition_init(&condition, $4, 1, &left_attr, NULL, 0, NULL, right_value);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+    expression comOp expression {
+        Condition condition;
+        condition_init(&condition, $2, $1, $3);
+        CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
     }
-    |value comOp ID DOT ID
-        {
-            Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-            RelAttr right_attr;
-            relation_attr_init(&right_attr, $3, $5);
-
-            Condition condition;
-            condition_init(&condition, $2, 0, NULL, left_value, 1, &right_attr, NULL);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+    ;
+expression:
+    expression '+' expression %prec '+' {
+        $$ = expression_create(EXPR, NULL, NULL, Plus, $1, $3);
     }
-    |ID DOT ID comOp ID DOT ID
-        {
-            RelAttr left_attr;
-            relation_attr_init(&left_attr, $1, $3);
-            RelAttr right_attr;
-            relation_attr_init(&right_attr, $5, $7);
-
-            Condition condition;
-            condition_init(&condition, $4, 1, &left_attr, NULL, 1, &right_attr, NULL);
-            CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
+    ;
+    | expression '-' expression %prec '-' {
+        $$ = expression_create(EXPR, NULL, NULL, Minus, $1, $3);
     }
-    |ID comOp LBRACE select_begin select_attr FROM ID rel_list where RBRACE
-    	{
-    	    selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $7);
-	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
-	    CONTEXT->condition_length[CONTEXT->select_length]);
-
-
-	    //临时变量清零
-	    CONTEXT->condition_length[CONTEXT->select_length]=0;
-	    CONTEXT->from_length[CONTEXT->select_length]=0;
-	    CONTEXT->value_length[CONTEXT->select_length] = 0;
-	    CONTEXT->select_length--;
-
-	    RelAttr left_attr;
-            relation_attr_init(&left_attr, NULL, $1);
-	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
-	    	CONTEXT->selects[CONTEXT->select_length+1]);
-	    Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-	    Condition condition;
-	    condition_init(&condition, $2, 1, &left_attr, NULL, 2, NULL, right_value);
-	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-
-	    //处理子查询内存
-	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    ;
+    | expression '*' expression %prec '*' {
+        $$ = expression_create(EXPR, NULL, NULL, Mul, $1, $3);
     }
-    |ID DOT ID comOp LBRACE select_begin select_attr FROM ID rel_list where RBRACE
-    {
-            selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $9);
-    	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
-    	    CONTEXT->condition_length[CONTEXT->select_length]);
-
-
-    	    //临时变量清零
-    	    CONTEXT->condition_length[CONTEXT->select_length]=0;
-    	    CONTEXT->from_length[CONTEXT->select_length]=0;
-    	    CONTEXT->value_length[CONTEXT->select_length] = 0;
-    	    CONTEXT->select_length--;
-
-    	    RelAttr left_attr;
-                relation_attr_init(&left_attr, $1, $3);
-    	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
-    	    	CONTEXT->selects[CONTEXT->select_length+1]);
-    	    Value *right_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-    	    Condition condition;
-    	    condition_init(&condition, $4, 1, &left_attr, NULL, 2, NULL, right_value);
-    	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-
-    	    //处理子查询内存
-    	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    ;
+    | expression '/' expression %prec '/' {
+        $$ = expression_create(EXPR, NULL, NULL, Div, $1, $3);
     }
-    |LBRACE select_begin select_attr FROM ID rel_list where RBRACE comOp ID
-    {
-    	    selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $5);
-	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
-	    CONTEXT->condition_length[CONTEXT->select_length]);
-
-
-	    //临时变量清零
-	    CONTEXT->condition_length[CONTEXT->select_length]=0;
-	    CONTEXT->from_length[CONTEXT->select_length]=0;
-	    CONTEXT->value_length[CONTEXT->select_length] = 0;
-	    CONTEXT->select_length--;
-
-	    RelAttr right_attr;
-		relation_attr_init(&right_attr, NULL, $10);
-	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
-		CONTEXT->selects[CONTEXT->select_length+1]);
-	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-	    Condition condition;
-	    condition_init(&condition, $9, 2, NULL, left_value, 1, &right_attr, NULL);
-	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-
-	    //处理子查询内存
-	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+    ;
+    | value {
+        Value *value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
+        $$ = expression_create(VAL, NULL, value, NOP, NULL, NULL);
     }
-    |LBRACE select_begin select_attr FROM ID rel_list where RBRACE comOp ID DOT ID
-    {
-            selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $5);
-    	    selects_append_conditions(&CONTEXT->selects[CONTEXT->select_length], CONTEXT->conditions[CONTEXT->select_length],
-    	    CONTEXT->condition_length[CONTEXT->select_length]);
+    ;
+    | ID {
+        RelAttr rel_attr;
+        relation_attr_init(&rel_attr, NULL, $1);
+        $$ = expression_create(ATTR, &rel_attr, NULL, NOP, NULL, NULL);
+    }
+    ;
+    | ID DOT ID {
+        RelAttr rel_attr;
+        relation_attr_init(&rel_attr, $1, $3);
+        $$ = expression_create(ATTR, &rel_attr, NULL, NOP, NULL, NULL);
+    }
+    ;
+    | LBRACE select_begin select_attr FROM ID rel_list where RBRACE {
+        selects_append_relation(&CONTEXT->selects[CONTEXT->select_length], $5);
+        selects_append_conditions(
+            &CONTEXT->selects[CONTEXT->select_length],
+            CONTEXT->conditions[CONTEXT->select_length],
+            CONTEXT->condition_length[CONTEXT->select_length]);
 
+        //临时变量清零
+        CONTEXT->condition_length[CONTEXT->select_length] = 0;
+        CONTEXT->from_length[CONTEXT->select_length] = 0;
+        CONTEXT->value_length[CONTEXT->select_length] = 0;
+        CONTEXT->select_length--;
 
-    	    //临时变量清零
-    	    CONTEXT->condition_length[CONTEXT->select_length]=0;
-    	    CONTEXT->from_length[CONTEXT->select_length]=0;
-    	    CONTEXT->value_length[CONTEXT->select_length] = 0;
-    	    CONTEXT->select_length--;
+        value_init_select(
+            &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
+            CONTEXT->selects[CONTEXT->select_length+1]);
+	    Value *value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
+        $$ = expression_create(SUB_QUERY, NULL, value, NOP, NULL, NULL);
 
-    	    RelAttr right_attr;
-    		relation_attr_init(&right_attr, $10, $12);
-    	    value_init_select(&CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length]++],
-    		CONTEXT->selects[CONTEXT->select_length+1]);
-    	    Value *left_value = &CONTEXT->values[CONTEXT->value_length[CONTEXT->select_length] - 1];
-
-    	    Condition condition;
-    	    condition_init(&condition, $9, 2, NULL, left_value, 1, &right_attr, NULL);
-    	    CONTEXT->conditions[CONTEXT->select_length][CONTEXT->condition_length[CONTEXT->select_length]++] = condition;
-
-    	    //处理子查询内存
-    	    memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
+        //处理子查询内存
+        memset(&CONTEXT->selects[CONTEXT->select_length+1], 0, sizeof(Selects));
     }
     ;
 
 comOp:
-        EQ { $$ = EQUAL_TO; }
+    EQ { $$ = EQUAL_TO; }
     | LT { $$ = LESS_THAN; }
     | GT { $$ = GREAT_THAN; }
     | LE { $$ = LESS_EQUAL; }
